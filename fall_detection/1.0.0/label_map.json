@@ -1,0 +1,17 @@
+[
+  {
+    "label_id": 0,
+    "category_code": 21001,
+    "display_name": "摔倒"
+  },
+  {
+    "label_id": 1,
+    "category_code": 21002,
+    "display_name": "疑似摔倒"
+  },
+  {
+    "label_id": 2,
+    "category_code": 21003,
+    "display_name": "正常人员"
+  }
+]

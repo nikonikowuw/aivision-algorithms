@@ -1,0 +1,90 @@
+algorithm_name: "fall_detection"
+algorithm: "fall_detection"
+version: "1.0.0"
+domain: "security"
+result_schema: "fall_pose_event"
+capabilities:
+  image: ["detect_person", "estimate_pose", "detect_fall"]
+  data: ["emit_event", "pose_keypoints"]
+description: "摔倒检测算法，基于 YOLOv8-pose 人体姿态关键点推理，综合人体框宽高比、躯干倾角和关键点可见性判断摔倒事件"
+hardware: ["rk3588", "rk3576", "x86_64"]
+
+ai_params_schema:
+  type: "object"
+  properties:
+    model_path:
+      type: "string"
+      title: "YOLOv8-pose 模型路径"
+      description: "ONNX 模型相对 package_dir 的路径或绝对路径"
+      default: "models/yolov8n-pose.onnx"
+    input_size:
+      type: "integer"
+      title: "模型输入尺寸"
+      description: "当前随包 ONNX 模型为静态 640 输入"
+      default: 640
+      minimum: 640
+      maximum: 640
+    conf_thres:
+      type: "number"
+      title: "人体置信度阈值"
+      description: "过滤低置信度人体检测结果"
+      default: 0.45
+      minimum: 0.0
+      maximum: 1.0
+    iou_thres:
+      type: "number"
+      title: "NMS IOU 阈值"
+      description: "人体检测框非极大值抑制阈值"
+      default: 0.45
+      minimum: 0.0
+      maximum: 1.0
+    keypoint_thres:
+      type: "number"
+      title: "关键点置信度阈值"
+      description: "低于该阈值的姿态关键点不参与摔倒判断"
+      default: 0.35
+      minimum: 0.0
+      maximum: 1.0
+    fall_aspect_ratio:
+      type: "number"
+      title: "摔倒宽高比阈值"
+      description: "人体框宽高比超过该值时认为人体趋于横向"
+      default: 1.25
+      minimum: 0.5
+      maximum: 5.0
+    torso_tilt_degree:
+      type: "number"
+      title: "躯干倾斜角阈值"
+      description: "肩-髋中线相对竖直方向的夹角超过该值时认为姿态横倒"
+      default: 60.0
+      minimum: 0.0
+      maximum: 90.0
+    min_pose_points:
+      type: "integer"
+      title: "最少有效关键点数"
+      description: "低于该数量的有效关键点输出疑似摔倒或忽略"
+      default: 5
+      minimum: 3
+      maximum: 17
+    suspected_score:
+      type: "number"
+      title: "疑似摔倒分数阈值"
+      description: "综合分数达到该阈值输出疑似摔倒"
+      default: 0.45
+      minimum: 0.0
+      maximum: 1.0
+    fall_score:
+      type: "number"
+      title: "摔倒分数阈值"
+      description: "综合分数达到该阈值输出摔倒"
+      default: 0.65
+      minimum: 0.0
+      maximum: 1.0
+    max_detections:
+      type: "integer"
+      title: "最大输出人数"
+      description: "单帧最多输出的人体姿态数量"
+      default: 20
+      minimum: 1
+      maximum: 100
+  required: ["input_size", "conf_thres", "iou_thres", "keypoint_thres", "fall_aspect_ratio", "torso_tilt_degree", "min_pose_points", "suspected_score", "fall_score"]
