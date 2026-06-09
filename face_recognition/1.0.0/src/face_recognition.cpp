@@ -1,5 +1,5 @@
 // 人脸识别算法包 - 主入口
-// 实现 ABI 接口，支持 InsightFace + YOLOv8 + ByteTracker
+// 实现 ABI 接口，支持 InsightFace + YOLOv11 + ByteTrack
 
 #include "face_recognition.h"
 #include <iostream>
@@ -11,6 +11,10 @@
 #include <cmath>
 #include <cstring>
 #include <sys/mman.h>
+#include <chrono>
+#include <sstream>
+#include <cstdlib>
+#include <filesystem>
 #include <json/json.h>
 
 // ============================================================
@@ -135,8 +139,8 @@ algo_handle_t detector_init(const char* config_json) {
         }
         
         // 设置配置（带验证）
-        ctx->config.conf_thres = std::max(0.0f, std::min(1.0f, 
-            config.get("conf_thres", 0.5f).asFloat()));
+        ctx->config.person_conf_thres = std::max(0.0f, std::min(1.0f, 
+            config.get("person_conf_thres", config.get("conf_thres", 0.5f)).asFloat()));
         ctx->config.iou_thres = std::max(0.0f, std::min(1.0f, 
             config.get("iou_thres", 0.45f).asFloat()));
         ctx->config.enable_tracker = config.get("enable_tracker", true).asBool();
@@ -157,22 +161,22 @@ algo_handle_t detector_init(const char* config_json) {
         }
         
         // 初始化人脸检测器
-        ctx->face_recognizer = std::make_unique<face_recognition::InsightFaceRecognizer>();
+        ctx->face_recognizer = face_recognition::CreateInsightFaceRecognizer();
         if (!ctx->face_recognizer->Initialize(ctx->package_dir + "/models/insightface")) {
             ALGO_LOG_ERROR("detector_init: Failed to initialize face recognizer");
             return nullptr;
         }
         
         // 初始化人体检测器
-        ctx->person_detector = std::make_unique<face_recognition::YOLOv8Detector>();
-        if (!ctx->person_detector->Initialize(ctx->package_dir + "/models/yolov8n.onnx")) {
+        ctx->person_detector = face_recognition::CreateYOLOv11PersonDetector();
+        if (!ctx->person_detector->Initialize(ctx->package_dir + "/models/yolov11n.onnx")) {
             ALGO_LOG_ERROR("detector_init: Failed to initialize person detector");
             return nullptr;
         }
         
         // 初始化追踪器（如果启用）
         if (ctx->config.enable_tracker) {
-            ctx->tracker = std::make_unique<face_recognition::ByteTracker>();
+            ctx->tracker = face_recognition::CreateByteTracker();
             if (!ctx->tracker->Initialize()) {
                 ALGO_LOG_ERROR("detector_init: Failed to initialize tracker");
                 return nullptr;
@@ -215,6 +219,9 @@ algo_handle_t detector_init(const char* config_json) {
         
     } catch (const std::exception& e) {
         ALGO_LOG_ERROR("detector_init: Exception: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        ALGO_LOG_ERROR("detector_init: Unknown exception");
         return nullptr;
     }
 }
@@ -270,7 +277,7 @@ int detector_infer(algo_handle_t handle,
         
         // 检测人体
         auto persons = ctx->person_detector->DetectPersons(
-            image, ctx->config.conf_thres, ctx->config.iou_thres);
+            image, ctx->config.person_conf_thres, ctx->config.iou_thres);
         
         // 应用追踪器（如果启用）
         if (ctx->config.enable_tracker && ctx->tracker) {
@@ -294,8 +301,14 @@ int detector_infer(algo_handle_t handle,
                 cv::Rect face_bbox = face.bbox;
                 face_bbox.x += expanded_bbox.x;
                 face_bbox.y += expanded_bbox.y;
+
+                std::vector<cv::Point2f> image_landmarks = face.landmarks;
+                for (auto& point : image_landmarks) {
+                    point.x += static_cast<float>(expanded_bbox.x);
+                    point.y += static_cast<float>(expanded_bbox.y);
+                }
                 
-                auto embedding = ctx->face_recognizer->ExtractEmbedding(image, face_bbox, face.landmarks);
+                auto embedding = ctx->face_recognizer->ExtractEmbedding(image, face_bbox, image_landmarks);
                 
                 Json::Value face_result;
                 face_result["detect_confidence"] = face.confidence;
@@ -308,7 +321,7 @@ int detector_infer(algo_handle_t handle,
                 face_result["bbox"] = bbox;
                 
                 Json::Value landmarks(Json::arrayValue);
-                for (const auto& point : face.landmarks) {
+                for (const auto& point : image_landmarks) {
                     Json::Value p; p["x"] = point.x; p["y"] = point.y;
                     landmarks.append(p);
                 }
@@ -376,6 +389,9 @@ int detector_infer(algo_handle_t handle,
         
     } catch (const std::exception& e) {
         ALGO_LOG_ERROR("detector_infer: Exception: %s", e.what());
+        return static_cast<int>(AlgoError::INFER_FAILED);
+    } catch (...) {
+        ALGO_LOG_ERROR("detector_infer: Unknown exception");
         return static_cast<int>(AlgoError::INFER_FAILED);
     }
 }
@@ -468,7 +484,7 @@ int detector_self_test() {
                      test_image.cols, test_image.rows);
         
         // 3. 初始化人脸检测器（如果模型存在）
-        auto face_recognizer = std::make_unique<face_recognition::InsightFaceRecognizer>();
+        auto face_recognizer = face_recognition::CreateInsightFaceRecognizer();
         std::string face_model_path = package_dir + "/models/insightface";
         
         if (face_recognizer->Initialize(face_model_path)) {
@@ -528,14 +544,20 @@ int detector_self_test() {
                 ALGO_LOG_INFO("detector_self_test: Embedding extraction successful");
             }
         } else {
+            if (std::filesystem::exists(face_model_path + "/../yolov11n-face.onnx") &&
+                std::filesystem::exists(face_model_path + "/2d106det.onnx") &&
+                std::filesystem::exists(face_model_path + "/w600k_r50.onnx")) {
+                ALGO_LOG_ERROR("detector_self_test: Face recognizer CoreML initialization failed");
+                return static_cast<int>(AlgoError::SELF_TEST_FAILED);
+            }
             ALGO_LOG_WARN("detector_self_test: Face recognizer not initialized (models may not exist)");
         }
         
         // 7. 测试人体检测器（如果模型存在）
-        auto person_detector = std::make_unique<face_recognition::YOLOv8Detector>();
-        std::string yolov8_path = package_dir + "/models/yolov8n.onnx";
+        auto person_detector = face_recognition::CreateYOLOv11PersonDetector();
+        std::string yolo11_path = package_dir + "/models/yolov11n.onnx";
         
-        if (person_detector->Initialize(yolov8_path)) {
+        if (person_detector->Initialize(yolo11_path)) {
             ALGO_LOG_INFO("detector_self_test: Person detector initialized");
             
             auto persons = person_detector->DetectPersons(test_image, 0.5f, 0.45f);
@@ -548,11 +570,15 @@ int detector_self_test() {
                 }
             }
         } else {
+            if (std::filesystem::exists(yolo11_path)) {
+                ALGO_LOG_ERROR("detector_self_test: Person detector CoreML initialization failed");
+                return static_cast<int>(AlgoError::SELF_TEST_FAILED);
+            }
             ALGO_LOG_WARN("detector_self_test: Person detector not initialized (models may not exist)");
         }
         
         // 8. 测试追踪器
-        auto tracker = std::make_unique<face_recognition::ByteTracker>();
+        auto tracker = face_recognition::CreateByteTracker();
         if (tracker->Initialize()) {
             // 模拟追踪测试
             std::vector<face_recognition::PersonDetection> test_detections;
@@ -578,6 +604,9 @@ int detector_self_test() {
     } catch (const std::exception& e) {
         ALGO_LOG_ERROR("detector_self_test: Exception: %s", e.what());
         return static_cast<int>(AlgoError::SELF_TEST_FAILED);
+    } catch (...) {
+        ALGO_LOG_ERROR("detector_self_test: Unknown exception");
+        return static_cast<int>(AlgoError::SELF_TEST_FAILED);
     }
 }
 
@@ -597,7 +626,7 @@ void* create_detector(const char* package_dir) {
     // 构建配置 JSON
     Json::Value config;
     config["package_dir"] = package_dir;
-    config["conf_thres"] = 0.5;
+    config["person_conf_thres"] = 0.5;
     config["iou_thres"] = 0.45;
     config["enable_tracker"] = true;
     config["face_conf_thres"] = 0.6;

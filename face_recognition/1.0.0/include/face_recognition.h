@@ -37,13 +37,13 @@ struct PersonDetection {
 
 // 算法配置
 struct AlgorithmConfig {
-    float conf_thres = 0.5f;              // 人体检测置信度阈值
+    float person_conf_thres = 0.5f;       // YOLOv11n 人体检测置信度阈值
     float iou_thres = 0.45f;              // NMS IOU 阈值
-    bool enable_tracker = true;           // 是否启用 ByteTracker
-    float face_conf_thres = 0.6f;         // 人脸检测置信度阈值
+    bool enable_tracker = true;           // 是否启用 ByteTrack
+    float face_conf_thres = 0.6f;         // YOLOv11n-face 人脸检测置信度阈值
     float face_quality_thres = 0.3f;      // 人脸质量阈值
     int max_faces = 10;                   // 单帧最大人脸数
-    float recognition_threshold = 0.6f;   // 人脸识别相似度阈值
+    float recognition_threshold = 0.6f;   // w600k_r50 人脸识别相似度阈值
 };
 
 // 人脸识别器接口
@@ -104,6 +104,10 @@ public:
     // 重置追踪器
     virtual void Reset() = 0;
 };
+
+std::unique_ptr<FaceRecognizer> CreateInsightFaceRecognizer();
+std::unique_ptr<PersonDetector> CreateYOLOv11PersonDetector();
+std::unique_ptr<ObjectTracker> CreateByteTracker();
 
 } // namespace face_recognition
 

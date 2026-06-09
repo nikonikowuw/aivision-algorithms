@@ -174,4 +174,8 @@ private:
     float iou_threshold_ = 0.3f;
 };
 
+std::unique_ptr<ObjectTracker> CreateByteTracker() {
+    return std::make_unique<ByteTracker>();
+}
+
 } // namespace face_recognition

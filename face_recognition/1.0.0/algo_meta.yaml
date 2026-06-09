@@ -3,18 +3,18 @@ version: "1.0.0"
 domain: "face"
 result_schema: "face_identity"
 capabilities:
-  image: ["detect", "estimate_keypoints", "extract_embedding"]
+  image: ["detect_person", "detect_face", "align_face", "extract_embedding"]
   data: ["track", "recognize_identity"]
-description: "人脸识别算法，基于InsightFace buffalo_l模型和YOLOv8-n人体检测，支持ByteTracker人体追踪"
+description: "人脸识别算法，基于YOLOv11n人体检测、ByteTrack追踪、YOLOv11n-face人脸检测、2d106det人脸对齐和w600k_r50人脸识别"
 hardware: ["rk3588", "rk3576", "x86_64"]
 
 ai_params_schema:
   type: "object"
   properties:
-    conf_thres:
+    person_conf_thres:
       type: "number"
-      title: "置信度阈值"
-      description: "过滤低置信度目标的阈值"
+      title: "人体置信度阈值"
+      description: "YOLOv11n人体检测置信度阈值"
       default: 0.5
       minimum: 0.0
       maximum: 1.0
@@ -27,13 +27,13 @@ ai_params_schema:
       maximum: 1.0
     enable_tracker:
       type: "boolean"
-      title: "启用ByteTracker人体追踪"
-      description: "在视频流模式下启用ByteTracker进行人体追踪"
+      title: "启用ByteTrack人体追踪"
+      description: "在视频流模式下启用ByteTrack进行人体追踪"
       default: true
     face_conf_thres:
       type: "number"
       title: "人脸置信度阈值"
-      description: "人脸检测置信度阈值"
+      description: "YOLOv11n-face人脸检测置信度阈值"
       default: 0.6
       minimum: 0.0
       maximum: 1.0
@@ -54,8 +54,8 @@ ai_params_schema:
     recognition_threshold:
       type: "number"
       title: "人脸识别阈值"
-      description: "人脸识别相似度阈值，高于此值认为是同一人"
+      description: "w600k_r50人脸特征相似度阈值，高于此值认为是同一人"
       default: 0.6
       minimum: 0.0
       maximum: 1.0
-  required: ["conf_thres", "iou_thres", "face_conf_thres"]
+  required: ["person_conf_thres", "iou_thres", "face_conf_thres"]

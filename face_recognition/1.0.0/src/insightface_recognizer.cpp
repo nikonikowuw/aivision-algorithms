@@ -1,4 +1,5 @@
 #include "face_recognition.h"
+#include "ort_coreml.h"
 #include <onnxruntime_cxx_api.h>
 #include <cmath>
 #include <algorithm>
@@ -15,39 +16,104 @@ public:
         try {
             // 初始化ONNX Runtime
             env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "InsightFace");
-            session_options_ = std::make_unique<Ort::SessionOptions>();
-            session_options_->SetIntraOpNumThreads(1);
-            session_options_->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
             
-            // 加载人脸检测模型
-            std::string det_model_path = model_dir + "/det_10g.onnx";
-            det_session_ = std::make_unique<Ort::Session>(*env_, det_model_path.c_str(), *session_options_);
+            // 加载 YOLOv11n-face 人脸检测模型 (MLProgram，100% CoreML，float32)
+            {
+                Ort::SessionOptions opts;
+                opts.SetIntraOpNumThreads(1);
+                opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+                opts.AddConfigEntry(kOrtSessionOptionsDisableCPUEPFallback, "1");
+                std::unordered_map<std::string,std::string> ep = {
+                    {"ModelFormat", "MLProgram"}, {"MLComputeUnits", "ALL"},
+                    {"RequireStaticInputShapes", "0"}, {"EnableOnSubgraphs", "1"},
+                };
+                opts.AppendExecutionProvider("CoreML", ep);
+                std::string det_model_path = model_dir + "/../yolov11n-face-fp32.onnx";
+                fprintf(stderr, "[INFO] Creating det_session_\n");
+                det_session_ = std::make_unique<Ort::Session>(*env_, det_model_path.c_str(), opts);
+                fprintf(stderr, "[INFO] det_session_ created\n");
+            }
+
+            // 加载 2d106det 人脸对齐关键点模型 (NeuralNetwork)
+            {
+                Ort::SessionOptions opts;
+                opts.SetIntraOpNumThreads(1);
+                opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+                opts.AddConfigEntry(kOrtSessionOptionsDisableCPUEPFallback, "1");
+                std::unordered_map<std::string,std::string> ep = {
+                    {"ModelFormat", "NeuralNetwork"}, {"MLComputeUnits", "ALL"},
+                    {"RequireStaticInputShapes", "0"}, {"EnableOnSubgraphs", "1"},
+                };
+                opts.AppendExecutionProvider("CoreML", ep);
+                std::string align_model_path = model_dir + "/2d106det.onnx";
+                fprintf(stderr, "[INFO] Creating align_session_\n");
+                align_session_ = std::make_unique<Ort::Session>(*env_, align_model_path.c_str(), opts);
+                fprintf(stderr, "[INFO] align_session_ created\n");
+            }
             
-            // 加载人脸特征提取模型
-            std::string rec_model_path = model_dir + "/w600k_r50.onnx";
-            rec_session_ = std::make_unique<Ort::Session>(*env_, rec_model_path.c_str(), *session_options_);
+            // 加载 w600k_r50 人脸特征提取模型 (NeuralNetwork，避免float16)
+            {
+                Ort::SessionOptions opts;
+                opts.SetIntraOpNumThreads(1);
+                opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+                opts.AddConfigEntry(kOrtSessionOptionsDisableCPUEPFallback, "1");
+                std::unordered_map<std::string,std::string> ep = {
+                    {"ModelFormat", "NeuralNetwork"}, {"MLComputeUnits", "ALL"},
+                    {"RequireStaticInputShapes", "0"}, {"EnableOnSubgraphs", "1"},
+                };
+                opts.AppendExecutionProvider("CoreML", ep);
+                std::string rec_model_path = model_dir + "/w600k_r50.onnx";
+                fprintf(stderr, "[INFO] Creating rec_session_\n");
+                rec_session_ = std::make_unique<Ort::Session>(*env_, rec_model_path.c_str(), opts);
+                fprintf(stderr, "[INFO] rec_session_ created\n");
+            }
             
             // 获取输入输出名称
             Ort::AllocatorWithDefaultOptions allocator;
             
             // 检测模型输入输出
-            det_input_name_ = det_session_->GetInputName(0, allocator);
-            det_output_name_ = det_session_->GetOutputName(0, allocator);
+            fprintf(stderr, "[INFO] Getting det input/output names\n");
+            auto det_input_name = det_session_->GetInputNameAllocated(0, allocator);
+            auto det_output_name = det_session_->GetOutputNameAllocated(0, allocator);
+            det_input_name_ = det_input_name.get();
+            det_output_name_ = det_output_name.get();
+            fprintf(stderr, "[INFO] det: %s -> %s\n", det_input_name_.c_str(), det_output_name_.c_str());
             
             // 识别模型输入输出
-            rec_input_name_ = rec_session_->GetInputName(0, allocator);
-            rec_output_name_ = rec_session_->GetOutputName(0, allocator);
+            fprintf(stderr, "[INFO] Getting rec input/output names\n");
+            auto rec_input_name = rec_session_->GetInputNameAllocated(0, allocator);
+            auto rec_output_name = rec_session_->GetOutputNameAllocated(0, allocator);
+            rec_input_name_ = rec_input_name.get();
+            rec_output_name_ = rec_output_name.get();
+            fprintf(stderr, "[INFO] rec: %s -> %s\n", rec_input_name_.c_str(), rec_output_name_.c_str());
             
             // 获取输入形状
-            auto input_tensor_info = det_session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-            auto input_shape = input_tensor_info.GetShape();
+            fprintf(stderr, "[INFO] Getting det input shape\n");
+            auto det_input_type = det_session_->GetInputTypeInfo(0);
+            auto det_tensor_info = det_input_type.GetTensorTypeAndShapeInfo();
+            fprintf(stderr, "[INFO] det tensor type: %d\n", static_cast<int>(det_tensor_info.GetElementType()));
+            det_input_type_ = det_tensor_info.GetElementType();
+            auto input_shape = det_tensor_info.GetShape();
+            fprintf(stderr, "[INFO] det shape dims: %zu\n", input_shape.size());
+            for (size_t i = 0; i < input_shape.size(); i++) {
+                fprintf(stderr, "[INFO]   dim[%zu] = %lld\n", i, input_shape[i]);
+            }
             det_input_height_ = static_cast<int>(input_shape[2]);
             det_input_width_ = static_cast<int>(input_shape[3]);
+            fprintf(stderr, "[INFO] det shape: %dx%d\n", det_input_width_, det_input_height_);
             
-            auto rec_input_tensor_info = rec_session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-            auto rec_input_shape = rec_input_tensor_info.GetShape();
+            fprintf(stderr, "[INFO] Getting rec input shape\n");
+            auto rec_input_type = rec_session_->GetInputTypeInfo(0);
+            auto rec_tensor_info = rec_input_type.GetTensorTypeAndShapeInfo();
+            fprintf(stderr, "[INFO] rec tensor type: %d\n", static_cast<int>(rec_tensor_info.GetElementType()));
+            auto rec_input_shape = rec_tensor_info.GetShape();
+            fprintf(stderr, "[INFO] rec shape dims: %zu\n", rec_input_shape.size());
+            for (size_t i = 0; i < rec_input_shape.size(); i++) {
+                fprintf(stderr, "[INFO]   dim[%zu] = %lld\n", i, rec_input_shape[i]);
+            }
             rec_input_height_ = static_cast<int>(rec_input_shape[2]);
             rec_input_width_ = static_cast<int>(rec_input_shape[3]);
+            fprintf(stderr, "[INFO] rec shape: %dx%d\n", rec_input_width_, rec_input_height_);
             
             initialized_ = true;
             return true;
@@ -68,68 +134,46 @@ public:
         cv::cvtColor(resized, resized, cv::COLOR_BGR2RGB);
         resized.convertTo(resized, CV_32F, 1.0 / 255.0);
         
-        // 创建输入tensor
+        // 创建输入tensor（根据模型输入类型自动处理float16/float32）
         std::vector<int64_t> input_shape = {1, 3, det_input_height_, det_input_width_};
         auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        std::vector<FaceDetection> faces;
+        const char* det_input_names[] = {det_input_name_.c_str()};
+        const char* det_output_names[] = {det_output_name_.c_str()};
+        
+        // float32 输入
         auto input_tensor = Ort::Value::CreateTensor<float>(
-            memory_info, 
-            reinterpret_cast<float*>(resized.data),
-            resized.total() * sizeof(float),
-            input_shape.data(), 
-            input_shape.size()
-        );
-        
-        // 运行推理
+            memory_info, reinterpret_cast<float*>(resized.data),
+            resized.total() * sizeof(float), input_shape.data(), input_shape.size());
         auto output_tensors = det_session_->Run(
-            Ort::RunOptions{nullptr},
-            &det_input_name_,
-            &input_tensor,
-            1,
-            &det_output_name_,
-            1
-        );
+            Ort::RunOptions{nullptr}, det_input_names, &input_tensor, 1, det_output_names, 1);
         
-        // 解析结果
         auto& output_tensor = output_tensors[0];
         auto output_shape = output_tensor.GetTensorTypeAndShapeInfo().GetShape();
         float* output_data = output_tensor.GetTensorMutableData<float>();
         
-        // 解析检测结果
-        std::vector<FaceDetection> faces;
-        int num_detections = static_cast<int>(output_shape[1]);
+        // YOLOv8 格式: [1, 5, 8400] -> [batch, 4+bbox+conf, num_detections]
+        int num_detections = static_cast<int>(output_shape[2]);
         
         for (int i = 0; i < num_detections; ++i) {
-            float* detection = output_data + i * 16; // 每个检测16个值
+            float cx = output_data[0 * num_detections + i];
+            float cy = output_data[1 * num_detections + i];
+            float w = output_data[2 * num_detections + i];
+            float h = output_data[3 * num_detections + i];
+            float confidence = output_data[4 * num_detections + i];
             
-            float confidence = detection[14];
             if (confidence < 0.5f) continue;
             
             FaceDetection face;
             face.confidence = confidence;
-            
-            // 解析边界框
-            float x1 = detection[0] * image.cols;
-            float y1 = detection[1] * image.rows;
-            float x2 = detection[2] * image.cols;
-            float y2 = detection[3] * image.rows;
-            
             face.bbox = cv::Rect(
-                static_cast<int>(x1),
-                static_cast<int>(y1),
-                static_cast<int>(x2 - x1),
-                static_cast<int>(y2 - y1)
-            );
+                static_cast<int>((cx - w/2) * image.cols),
+                static_cast<int>((cy - h/2) * image.rows),
+                static_cast<int>(w * image.cols),
+                static_cast<int>(h * image.rows));
             
-            // 解析关键点
-            for (int j = 0; j < 5; ++j) {
-                float kx = detection[4 + j * 2] * image.cols;
-                float ky = detection[5 + j * 2] * image.rows;
-                face.landmarks.emplace_back(kx, ky);
-            }
-            
-            // 计算质量评分
+            // YOLOv8-face 没有关键点输出，留空
             face.quality_score = CalculateFaceQuality(image, face.bbox, face.landmarks);
-            
             faces.push_back(face);
         }
         
@@ -153,7 +197,9 @@ public:
             memory_info, reinterpret_cast<float*>(resized.data),
             resized.total() * sizeof(float), input_shape.data(), input_shape.size());
         
-        auto output_tensors = rec_session_->Run(Ort::RunOptions{nullptr}, &rec_input_name_, &input_tensor, 1, &rec_output_name_, 1);
+        const char* rec_input_names[] = {rec_input_name_.c_str()};
+        const char* rec_output_names[] = {rec_output_name_.c_str()};
+        auto output_tensors = rec_session_->Run(Ort::RunOptions{nullptr}, rec_input_names, &input_tensor, 1, rec_output_names, 1);
         float* output_data = output_tensors[0].GetTensorMutableData<float>();
         size_t output_size = output_tensors[0].GetTensorTypeAndShapeInfo().GetElementCount();
         
@@ -296,8 +342,8 @@ private:
     
     bool initialized_ = false;
     std::unique_ptr<Ort::Env> env_;
-    std::unique_ptr<Ort::SessionOptions> session_options_;
     std::unique_ptr<Ort::Session> det_session_;
+    std::unique_ptr<Ort::Session> align_session_;
     std::unique_ptr<Ort::Session> rec_session_;
     
     std::string det_input_name_;
@@ -307,8 +353,13 @@ private:
     
     int det_input_height_ = 640;
     int det_input_width_ = 640;
+    ONNXTensorElementDataType det_input_type_ = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     int rec_input_height_ = 112;
     int rec_input_width_ = 112;
 };
+
+std::unique_ptr<FaceRecognizer> CreateInsightFaceRecognizer() {
+    return std::make_unique<InsightFaceRecognizer>();
+}
 
 } // namespace face_recognition
