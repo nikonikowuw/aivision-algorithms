@@ -4,3 +4,7 @@
 **/*.zip
 *.onnx
 *.pt
+*.tar
+*.rknn
+*.om
+.venv/

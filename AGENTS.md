@@ -13,10 +13,10 @@
 ```text
 algorithms/<algorithm_name>/<version>/
 ├── algo_meta.yaml          # 核心配置文件（必须）
-├── nikoniko_detector.so    # 算法动态库，C-API（必须，名称可能不同，但后缀必为 .so）
+├── nikoniko_detector.so    # 算法动态库，C-API（必须，名称必须是nikoniko_detector.so）
 ├── testimage.jpg           # 算法自检测试图片（必须）
 ├── label_map.json          # 类别编码映射（必须）
-├── models/                 # AI 模型文件 (ONNX, TensorRT 等)
+├── models/                 # AI 模型文件 (ONNX, OM, TensorRT 等)
 ├── CMakeLists.txt          # C++ 构建脚本
 ├── README.md               # 算法说明文档
 └── src/                    # 源码及内部实现
