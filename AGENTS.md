@@ -115,3 +115,24 @@ algorithms/<algorithm_name>/<version>/
 3. **构建验证**: 维护并使用 `CMakeLists.txt` 或 `build.sh` 编译生成 `.so`。
 4. **测试自检**: 运行单元测试（如果有）和 `test.sh` / `validate.sh` / `verify_fixes.sh`，确保新生成的动态库输出了正确的符号并且可以成功完成本地推理。
 5. **产物打包**: 验证目录结构满足打包规范（必须包含库文件、yaml配置、映射表以及测试图）。
+<!-- TRELLIS:START -->
+# Trellis Instructions
+
+These instructions are for AI assistants working in this project.
+
+This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+
+- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
+- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
+- `.trellis/workspace/` — per-developer journals and session traces
+- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+
+If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+
+If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
+- `.agents/skills/` — reusable Trellis skills
+- `.codex/agents/` — optional custom subagents
+
+Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
+
+<!-- TRELLIS:END -->
