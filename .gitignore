@@ -9,3 +9,6 @@
 *.om
 .venv/
 **/*.mlpackage/*
+*.ckpt
+**/__pycache__/*
+*.onnx.data
