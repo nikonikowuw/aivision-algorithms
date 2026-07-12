@@ -16,6 +16,7 @@ ScrfdModel::ScrfdModel(int input_size, float conf_threshold, float iou_threshold
     // Allocate buffer for float input tensor: shape is [1, 3, input_size, input_size]
     // 预分配 float 输入缓冲区：shape 为 [1, 3, input_size, input_size]
     input_buffer_.resize(1 * 3 * input_size_ * input_size_);
+    letterbox_buffer_.resize(static_cast<size_t>(input_size_) * input_size_ * 3);
     input_shape_ = {1, 3, input_size_, input_size_};
 
     // 设置归一化参数：行人模型用 (val-127.5)/127.5 → [-1,1]
@@ -74,12 +75,11 @@ bool ScrfdModel::Preprocess(const Image& image, ModelInput* input,
     
     // Step 1: Letterbox — 保持宽高比缩放到 input_size_，不足部分填充
     // Step 1: Letterbox — scale to input_size_ maintaining aspect ratio, pad remaining area
-    std::vector<uint8_t> letterboxed(input_size_ * input_size_ * 3);
-    image_utils::Letterbox(image, input_size_, letterboxed.data(), info);
+    image_utils::Letterbox(image, input_size_, letterbox_buffer_.data(), info, &resize_buffer_);
     
     // Step 2: BlobFromImage — BGR→RGB + 除以 mean 归一化 + HWC→CHW
     // Step 2: BlobFromImage — BGR→RGB + divide by mean normalization + HWC→CHW
-    if (!image_utils::BlobFromImage(letterboxed.data(), input_size_, input_size_, input_buffer_.data(), input_buffer_.size(), true, mean_, std_)) {
+    if (!image_utils::BlobFromImage(letterbox_buffer_.data(), input_size_, input_size_, input_buffer_.data(), input_buffer_.size(), true, mean_, std_)) {
         return false;
     }
     

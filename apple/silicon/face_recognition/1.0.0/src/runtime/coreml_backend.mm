@@ -55,13 +55,14 @@ bool CoreMLBackend::Load(const std::string& model_path) {
         NSURL *model_url = [NSURL fileURLWithPath:ns_path];
         
         NSError *error = nil;
-        // Step 1: 编译 .mlmodel → .mlmodelc（CoreML 模型包）
-        // Step 1: Compile .mlmodel → .mlmodelc (CoreML model package)
-        NSURL *compiled_url = [MLModel compileModelAtURL:model_url error:&error];
-        if (error || !compiled_url) {
-            ALGO_LOGE(CONFIG, "CoreML compilation failed: %s", 
-                      error ? [[error localizedDescription] UTF8String] : "Unknown error");
-            return false;
+        NSURL *compiled_url = model_url;
+        if (![[ns_path pathExtension] isEqualToString:@"mlmodelc"]) {
+            compiled_url = [MLModel compileModelAtURL:model_url error:&error];
+            if (error || !compiled_url) {
+                ALGO_LOGE(CONFIG, "CoreML compilation failed: %s",
+                          error ? [[error localizedDescription] UTF8String] : "Unknown error");
+                return false;
+            }
         }
         
         // Step 2: 创建 MLModelConfiguration 并加载已编译的模型
@@ -156,12 +157,19 @@ bool CoreMLBackend::Run(const std::vector<ModelInput>& inputs,
         // 将 CoreML 输出转换为 ModelOutput 结构体
         // Convert CoreML outputs to ModelOutput structs
         if (outputs) {
-            outputs->clear();
-            for (NSString *out_name in [[results featureNames] allObjects]) {
+            NSArray<NSString *> *feature_names = [[results featureNames] allObjects];
+            outputs->resize([feature_names count]);
+            for (NSUInteger i = 0; i < [feature_names count]; ++i) {
+                NSString *out_name = [feature_names objectAtIndex:i];
                 MLFeatureValue *val = [results featureValueForName:out_name];
                 MLMultiArray *out_arr = [val multiArrayValue];
-                
-                ModelOutput out_obj;
+                if (!out_arr || [out_arr dataType] != MLMultiArrayDataTypeFloat32) {
+                    ALGO_LOGE(BACKEND, "CoreML output is not a Float32 MLMultiArray: %s",
+                              [out_name UTF8String]);
+                    return false;
+                }
+
+                ModelOutput& out_obj = (*outputs)[i];
                 out_obj.name = [out_name UTF8String];
                 int64_t count = [out_arr count];
                 out_obj.buffer.resize(count);
@@ -179,7 +187,6 @@ bool CoreMLBackend::Run(const std::vector<ModelInput>& inputs,
                     out_obj.shape[d] = [[out_shape objectAtIndex:d] longLongValue];
                 }
                 
-                outputs->push_back(std::move(out_obj));
             }
         }
         

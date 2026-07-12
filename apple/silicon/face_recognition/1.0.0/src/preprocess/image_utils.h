@@ -37,10 +37,13 @@ struct LetterboxInfo {
  * @param nv12_data  NV12 输入数据指针 / pointer to NV12 input data
  * @param width      图像宽度 / image width
  * @param height     图像高度 / image height
+ * @param y_stride   Y plane 行跨度 / Y-plane row stride
+ * @param uv_stride  UV plane 行跨度 / UV-plane row stride
  * @param bgr_data   BGR 输出缓冲区 (width*height*3 bytes) / output BGR buffer
  * @return true 成功 / success, false 参数无效 / invalid parameters
  */
-bool NV12ToBGR(const uint8_t* nv12_data, int width, int height, uint8_t* bgr_data);
+bool NV12ToBGR(const uint8_t* nv12_data, int width, int height,
+               int y_stride, int uv_stride, uint8_t* bgr_data);
 
 /**
  * @brief 对源 BGR 图像做双线性插值缩放
@@ -65,7 +68,8 @@ void BilinearResize(const uint8_t* src, int src_w, int src_h, int src_stride,
  * @param dst         输出缓冲区 (target_size*target_size*3 bytes) / output buffer
  * @param info        [out] Letterbox 变换信息 / letterbox transform info (optional)
  */
-void Letterbox(const face_rec::Image& src, int target_size, uint8_t* dst, LetterboxInfo* info);
+void Letterbox(const face_rec::Image& src, int target_size, uint8_t* dst,
+               LetterboxInfo* info, std::vector<uint8_t>* resize_buffer = nullptr);
 
 /**
  * @brief 将 BGR HWC 图像转换为 float CHW Blob，支持通道交换与归一化

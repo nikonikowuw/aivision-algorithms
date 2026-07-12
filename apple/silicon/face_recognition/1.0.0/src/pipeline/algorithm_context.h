@@ -37,8 +37,6 @@
 #include "postprocess/face_aligner.h"
 #include "pipeline/tracker.h"
 #include "pipeline/face_index.h"
-#include "pipeline/thread_pool.h"
-#include "pipeline/attribute.h"
 #include "models/model_interface.h"
 #include "models/scrfd_model.h"
 #include "models/adaface_model.h"
@@ -118,15 +116,15 @@ private:
     std::unique_ptr<IFaceAligner> aligner_;       // 人脸对齐器 / Face aligner (InsightFace)
     std::unique_ptr<ITracker> tracker_;           // 目标跟踪器 / Object tracker (ByteTracker)
     FaceIndex face_index_;                        // 人脸底库索引 / Face database index
-    std::unique_ptr<ThreadPool> thread_pool_;     // 线程池 / Thread pool for parallel tasks
-    std::unique_ptr<IAttributeExtractor> body_attr_;  // 人体属性提取器 / Body attribute extractor
-    std::unique_ptr<IAttributeExtractor> face_attr_;  // 人脸属性提取器 / Face attribute extractor
-
     // ---- 同步与时序统计 / Synchronization & Timing ----
     std::mutex infer_mutex_;                      // 推理互斥锁（串行化 Infer） / Serialize Infer calls
     PipelineTiming timing_;                       // 各阶段计时统计 / Per-stage timing stats
     int frame_count_ = 0;                         // 帧计数器 / Frame counter
     std::vector<uint8_t> decoded_bgr_buffer_;     // NV12→BGR 解码缓存 / NV12-to-BGR decode buffer
+    std::vector<uint8_t> aligned_face_buffer_;    // 复用的人脸对齐缓存 / Reusable aligned-face buffer
+    std::vector<ModelOutput> person_raw_outputs_;
+    std::vector<ModelOutput> face_raw_outputs_;
+    std::vector<ModelOutput> recognition_raw_outputs_;
 };
 
 } // namespace face_rec

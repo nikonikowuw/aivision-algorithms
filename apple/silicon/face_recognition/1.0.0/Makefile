@@ -22,7 +22,7 @@ if yaml is None:
             raise SystemExit(f"algo_meta.yaml missing: {needle}")
 else:
     meta = yaml.safe_load(Path("algo_meta.yaml").read_text())
-    for field in ["algorithm_name", "algorithm", "version", "domain", "result_schema", "capabilities", "ai_params_schema"]:
+    for field in ["algorithm", "version", "domain", "result_schema", "capabilities", "ai_params_schema"]:
         if field not in meta:
             raise SystemExit(f"Missing algo_meta field: {field}")
     if meta["algorithm"] != "face_recognition":

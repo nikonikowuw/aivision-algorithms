@@ -1,8 +1,6 @@
 add_library(algo_pipeline STATIC
     tracker.cpp
     face_index.cpp
-    thread_pool.cpp
-    attribute.cpp
     algorithm_context.cpp
 )
 

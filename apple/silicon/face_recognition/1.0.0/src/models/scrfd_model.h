@@ -75,6 +75,8 @@ private:
     
     // Pre-allocated buffers for zero-copy inputs
     std::vector<float> input_buffer_;     ///< 预分配的 float 输入缓冲区 [1,3,H,W] / pre-allocated float input buffer [1,3,H,W]
+    std::vector<uint8_t> letterbox_buffer_;  ///< 预分配的 letterbox 图像 / pre-allocated letterbox image
+    std::vector<uint8_t> resize_buffer_;     ///< 预分配的 resize 临时区 / pre-allocated resize scratch
     std::vector<int64_t> input_shape_;    ///< 输入张量形状 / input tensor shape
     
     std::vector<std::string> output_names_;   ///< 输出层名称 / output layer names

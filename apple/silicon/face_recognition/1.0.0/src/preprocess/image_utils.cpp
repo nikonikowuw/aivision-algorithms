@@ -24,19 +24,22 @@ inline uint8_t Clamp(float val) {
     return static_cast<uint8_t>(val);
 }
 
-bool NV12ToBGR(const uint8_t* nv12_data, int width, int height, uint8_t* bgr_data) {
-    if (!nv12_data || !bgr_data || width <= 0 || height <= 0) return false;
-    // Y 平面在前 width*height 字节，UV 平面紧随其后（交替排列）
-    // Y plane occupies the first width*height bytes, UV plane follows interleaved
+bool NV12ToBGR(const uint8_t* nv12_data, int width, int height,
+               int y_stride, int uv_stride, uint8_t* bgr_data) {
+    if (!nv12_data || !bgr_data || width <= 0 || height <= 0 ||
+        (width & 1) != 0 || (height & 1) != 0 ||
+        y_stride < width || uv_stride < width) {
+        return false;
+    }
     const uint8_t* y_plane = nv12_data;
-    const uint8_t* uv_plane = nv12_data + width * height;
+    const uint8_t* uv_plane = nv12_data + y_stride * height;
     
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            int y_idx = y * width + x;
+            int y_idx = y * y_stride + x;
             // NV12 中两个 Y 共享一对 UV（2x2 块），UV 按交错排列
             // In NV12, every 2x2 Y block shares one U/V pair, stored interleaved
-            int uv_idx = (y / 2) * width + (x / 2) * 2;
+            int uv_idx = (y / 2) * uv_stride + (x / 2) * 2;
             
             uint8_t Y = y_plane[y_idx];
             uint8_t U = uv_plane[uv_idx];
@@ -116,7 +119,8 @@ void BilinearResize(const uint8_t* src, int src_w, int src_h, int src_stride,
     }
 }
 
-void Letterbox(const face_rec::Image& src, int target_size, uint8_t* dst, LetterboxInfo* info) {
+void Letterbox(const face_rec::Image& src, int target_size, uint8_t* dst,
+               LetterboxInfo* info, std::vector<uint8_t>* resize_buffer) {
     int w = src.width;
     int h = src.height;
     // 按宽高比计算缩放比例，取较小值保证图像完全包含在目标区域内
@@ -136,7 +140,9 @@ void Letterbox(const face_rec::Image& src, int target_size, uint8_t* dst, Letter
     
     // 创建临时缓冲区保存缩放后的图像区域
     // Create temporary buffer for the resized image region
-    std::vector<uint8_t> resized(nw * nh * 3);
+    std::vector<uint8_t> local_resized;
+    std::vector<uint8_t>& resized = resize_buffer ? *resize_buffer : local_resized;
+    resized.resize(static_cast<size_t>(nw) * nh * 3);
     BilinearResize(src.data, w, h, src.stride, resized.data(), nw, nh, nw * 3);
     
     // 将缩放后的图像复制到目标缓冲区的居中位置

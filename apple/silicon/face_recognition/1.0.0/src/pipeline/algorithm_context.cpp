@@ -165,9 +165,7 @@ void AlgorithmContext::Destroy() {
     face_rec_backend_.reset();
     tracker_.reset();
     aligner_.reset();
-    thread_pool_.reset();
-    body_attr_.reset();
-    face_attr_.reset();
+    initialized_ = false;
 }
 
 /**
@@ -229,10 +227,7 @@ bool AlgorithmContext::Initialize(const char* config_json) {
         tracker_->Initialize(config_.tracker_iou_thres, config_.tracker_max_lost_frames);
 
         face_index_.Initialize(config_.recognition_threshold);
-        thread_pool_ = std::make_unique<ThreadPool>(config_.thread_pool_size);
-        // 默认使用空属性提取器（优雅降级）/ Default to null attribute extractors (graceful deg.)
-        body_attr_ = std::make_unique<NullAttributeExtractor>();
-        face_attr_ = std::make_unique<NullAttributeExtractor>();
+        aligned_face_buffer_.resize(112 * 112 * 3);
 
         initialized_ = true;
         ALGO_LOGI(CONFIG, "Face Recognition Pipeline initialized successfully.");
@@ -298,11 +293,19 @@ int AlgorithmContext::UpdateFaceLibrary(const char* face_library_json) {
 
         // 校验：id 非空且特征维度为 512 / Validate: non-empty id and 512-d embedding
         if (!id.empty() && embedding.size() == 512) {
+            float norm_squared = 0.0f;
+            for (float value : embedding) norm_squared += value * value;
+            const float norm = std::sqrt(norm_squared);
+            if (!std::isfinite(norm) || norm < 1e-6f) {
+                search_pos = std::max({id_end, name_end, emb_end});
+                continue;
+            }
+            for (float& value : embedding) value /= norm;
             KnownIdentity identity;
             identity.id = id;
             identity.name = name;
-            identity.embedding = embedding;
-            parsed_identities.push_back(identity);
+            identity.embedding = std::move(embedding);
+            parsed_identities.push_back(std::move(identity));
         }
 
         // 移动到下一个身份记录的起始位置 / Advance to next identity entry
@@ -312,14 +315,20 @@ int AlgorithmContext::UpdateFaceLibrary(const char* face_library_json) {
         }
     }
 
-    // 原子替换底库快照 / Atomically replace the database snapshot
-    face_index_.Update([&](FaceIndex::Snapshot& snap) {
-        snap.version = version;
-        snap.identities = parsed_identities;
-    });
+    FaceIndex::Snapshot snapshot;
+    snapshot.version = version;
+    snapshot.embedding_dim = 512;
+    snapshot.embeddings.reserve(parsed_identities.size() * snapshot.embedding_dim);
+    for (const auto& identity : parsed_identities) {
+        snapshot.embeddings.insert(snapshot.embeddings.end(),
+                                   identity.embedding.begin(), identity.embedding.end());
+    }
+    snapshot.identities = std::move(parsed_identities);
+    const size_t identity_count = snapshot.identities.size();
+    face_index_.Replace(std::move(snapshot));
 
     ALGO_LOGI(FACE_INDEX, "Face library updated. Version: %s, Identities count: %d",
-              version.c_str(), static_cast<int>(parsed_identities.size()));
+              version.c_str(), static_cast<int>(identity_count));
 
     return 0;
 }
@@ -342,14 +351,19 @@ int AlgorithmContext::UpdateFaceLibrary(const char* face_library_json) {
  */
 int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_json,
                             infer_result_t* result) {
+    (void)context_json;
     if (!input || !result) return -1;
-    if (!initialized_) return -1;
+    result->result_json = nullptr;
+    result->result_json_len = 0;
+    result->infer_time_us = 0;
     // TODO: context_json 用于传递场景 ID/session 上下文到底库检索（多场景隔离识别），当前版本尚未实现
     // TODO: context_json carries scene ID/session context for database search (multi-scene isolation); not yet implemented in this version
 
     // 串行化 Infer 调用 / Serialize Infer calls
     std::lock_guard<std::mutex> lock(infer_mutex_);
+    if (!initialized_) return -1;
 
+    timing_.Reset();
     timing_.total.Start();
 
     int frame_w = static_cast<int>(input->width);
@@ -366,16 +380,30 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
 
     Image frame_img;
     if (input->pixel_format == pixel_format::BGR24) {
+        if (input->stride < input->width * 3 ||
+            input->size < static_cast<size_t>(input->stride) * input->height) {
+            ALGO_LOGE(PIPELINE, "Infer failed: Invalid BGR24 stride or buffer size.");
+            return -2;
+        }
         // BGR24 直接封装 / Directly wrap BGR24 memory
         frame_img = Image{reinterpret_cast<const uint8_t*>(input->data), frame_w, frame_h, 3, static_cast<int>(input->stride)};
     } else if (input->pixel_format == pixel_format::NV12) {
-        // NV12 转 BGR24 / Convert NV12 to BGR24
+        if ((frame_w & 1) != 0 || (frame_h & 1) != 0 || input->stride < input->width ||
+            input->size < static_cast<size_t>(input->stride) * input->height * 3 / 2) {
+            ALGO_LOGE(PIPELINE, "Infer failed: Invalid NV12 dimensions, stride, or buffer size.");
+            return -2;
+        }
         decoded_bgr_buffer_.resize(frame_w * frame_h * 3);
-        image_utils::NV12ToBGR(reinterpret_cast<const uint8_t*>(input->data), frame_w, frame_h, decoded_bgr_buffer_.data());
+        if (!image_utils::NV12ToBGR(reinterpret_cast<const uint8_t*>(input->data),
+                                    frame_w, frame_h, static_cast<int>(input->stride),
+                                    static_cast<int>(input->stride), decoded_bgr_buffer_.data())) {
+            ALGO_LOGE(PIPELINE, "Infer failed: NV12 conversion failed.");
+            return -2;
+        }
         frame_img = Image{decoded_bgr_buffer_.data(), frame_w, frame_h, 3, frame_w * 3};
     } else {
-        // 未知格式，尝试按 BGR24 处理 / Unknown format, fallback to BGR24
-        frame_img = Image{reinterpret_cast<const uint8_t*>(input->data), frame_w, frame_h, 3, static_cast<int>(input->stride)};
+        ALGO_LOGE(PIPELINE, "Infer failed: Unsupported pixel format: 0x%08x", input->pixel_format);
+        return -2;
     }
 
     // ---- Step 2: 人体检测预处理 ----
@@ -390,9 +418,8 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
 
     // ---- Step 3: 人体检测推理 ----
     // Body detection inference
-    std::vector<ModelOutput> person_raw_outs;
     std::vector<ModelInput> person_inputs = {person_in};
-    if (!person_backend_->Run(person_inputs, &person_raw_outs)) {
+    if (!person_backend_->Run(person_inputs, &person_raw_outputs_)) {
         ALGO_LOGE(PIPELINE, "Person detector session run failed.");
         return -4;
     }
@@ -400,7 +427,7 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
     // ---- Step 4: 人体检测后处理 ----
     // Body detection postprocessing (NMS, decode boxes)
     std::vector<DetectedObject> body_objects;
-    if (!person_detector_->Postprocess(person_raw_outs, person_letterbox, &body_objects)) {
+    if (!person_detector_->Postprocess(person_raw_outputs_, person_letterbox, &body_objects)) {
         ALGO_LOGE(PIPELINE, "Person detector postprocessing failed.");
         return -5;
     }
@@ -430,8 +457,6 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
     }
 
     std::vector<DetectedObject> final_outputs;
-    std::vector<uint8_t> aligned_face_buf(112 * 112 * 3);  // 对齐后人脸缓存 / Aligned face buffer (112x112 RGB)
-
     // ---- Step 6: 逐人体处理（ROI 裁切 → 人脸检测 → 对齐 → 特征提取 → 检索） ----
     // Process each tracked body: ROI crop → face detection → alignment → feature extraction → search
 
@@ -469,9 +494,8 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
         }
 
         // 6c. 人脸检测推理 / Face detection inference
-        std::vector<ModelOutput> face_raw_outs;
         std::vector<ModelInput> face_inputs = {face_in};
-        if (!face_backend_->Run(face_inputs, &face_raw_outs)) {
+        if (!face_backend_->Run(face_inputs, &face_raw_outputs_)) {
             timing_.face_detect.Stop();
             emit_person(body);
             continue;
@@ -479,7 +503,7 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
 
         // 6d. 人脸检测后处理 / Face detection postprocessing
         std::vector<DetectedObject> face_objects;
-        if (!face_detector_->Postprocess(face_raw_outs, face_letterbox, &face_objects) || face_objects.empty()) {
+        if (!face_detector_->Postprocess(face_raw_outputs_, face_letterbox, &face_objects) || face_objects.empty()) {
             timing_.face_detect.Stop();
             emit_person(body);
             continue;
@@ -507,12 +531,12 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
         }
 
         // InsightFace 对齐：仿射变换到 112x112 / InsightFace alignment: affine warp to 112x112
-        if (!aligner_->Align(head_roi, local_landmarks, aligned_face_buf.data())) {
+        if (!aligner_->Align(head_roi, local_landmarks, aligned_face_buffer_.data())) {
             timing_.align.Stop();
             emit_person(body);
             continue;
         }
-        Image aligned_face{aligned_face_buf.data(), 112, 112, 3, 112 * 3};
+        Image aligned_face{aligned_face_buffer_.data(), 112, 112, 3, 112 * 3};
         timing_.align.Stop();
 
         // 6g. 人脸特征提取预处理 / Face recognition preprocessing
@@ -526,9 +550,8 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
         }
 
         // 6h. 人脸特征提取推理 / Feature extraction inference (AdaFace)
-        std::vector<ModelOutput> rec_raw_outs;
         std::vector<ModelInput> rec_inputs = {rec_in};
-        if (!face_rec_backend_->Run(rec_inputs, &rec_raw_outs)) {
+        if (!face_rec_backend_->Run(rec_inputs, &recognition_raw_outputs_)) {
             timing_.extract.Stop();
             emit_person(body);
             continue;
@@ -536,7 +559,7 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
 
         // 6i. 特征提取后处理 / Feature extraction postprocessing (L2 normalize)
         std::vector<DetectedObject> dummy_face_list = {face_obj};
-        if (!face_recognizer_->Postprocess(rec_raw_outs, rec_letterbox, &dummy_face_list)) {
+        if (!face_recognizer_->Postprocess(recognition_raw_outputs_, rec_letterbox, &dummy_face_list)) {
             timing_.extract.Stop();
             emit_person(body);
             continue;
@@ -661,6 +684,10 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
 
     // 拷贝结果到输出缓冲区 / Copy result to output buffer
     result->result_json = static_cast<char*>(std::malloc(json.size() + 1));
+    if (!result->result_json) {
+        ALGO_LOGE(PIPELINE, "Infer failed: Unable to allocate result JSON.");
+        return -6;
+    }
     std::memcpy(result->result_json, json.c_str(), json.size() + 1);
     result->result_json_len = json.size();
 

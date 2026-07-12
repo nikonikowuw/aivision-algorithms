@@ -224,32 +224,36 @@ struct BlobStats {
  * @param ...    变长参数
  * @note 使用方式：ALGO_LOGD(FACE_DET, "confidence: %.2f", conf);
  */
-#define ALGO_LOGD(module, fmt, ...) \
+#define ALGO_LOGD(module, ...) do { \
     if (face_rec::Logger::Instance().ShouldLog(face_rec::LogModule::module, face_rec::LogLevel::DEBUG)) \
-        face_rec::Logger::Instance().Log(face_rec::LogLevel::DEBUG, face_rec::LogModule::module, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+        face_rec::Logger::Instance().Log(face_rec::LogLevel::DEBUG, face_rec::LogModule::module, __FILE__, __LINE__, __VA_ARGS__); \
+} while (0)
 
 /**
  * @def ALGO_LOGI
  * @brief INFO 级别日志宏
  */
-#define ALGO_LOGI(module, fmt, ...) \
+#define ALGO_LOGI(module, ...) do { \
     if (face_rec::Logger::Instance().ShouldLog(face_rec::LogModule::module, face_rec::LogLevel::INFO)) \
-        face_rec::Logger::Instance().Log(face_rec::LogLevel::INFO, face_rec::LogModule::module, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+        face_rec::Logger::Instance().Log(face_rec::LogLevel::INFO, face_rec::LogModule::module, __FILE__, __LINE__, __VA_ARGS__); \
+} while (0)
 
 /**
  * @def ALGO_LOGW
  * @brief WARN 级别日志宏
  */
-#define ALGO_LOGW(module, fmt, ...) \
+#define ALGO_LOGW(module, ...) do { \
     if (face_rec::Logger::Instance().ShouldLog(face_rec::LogModule::module, face_rec::LogLevel::WARN)) \
-        face_rec::Logger::Instance().Log(face_rec::LogLevel::WARN, face_rec::LogModule::module, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+        face_rec::Logger::Instance().Log(face_rec::LogLevel::WARN, face_rec::LogModule::module, __FILE__, __LINE__, __VA_ARGS__); \
+} while (0)
 
 /**
  * @def ALGO_LOGE
  * @brief ERROR 级别日志宏
  */
-#define ALGO_LOGE(module, fmt, ...) \
+#define ALGO_LOGE(module, ...) do { \
     if (face_rec::Logger::Instance().ShouldLog(face_rec::LogModule::module, face_rec::LogLevel::ERROR)) \
-        face_rec::Logger::Instance().Log(face_rec::LogLevel::ERROR, face_rec::LogModule::module, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+        face_rec::Logger::Instance().Log(face_rec::LogLevel::ERROR, face_rec::LogModule::module, __FILE__, __LINE__, __VA_ARGS__); \
+} while (0)
 
 #endif // FACE_RECOGNITION_LOGGER_H

@@ -64,8 +64,8 @@ struct SearchResult {
  * Face database index (double-buffer snapshot model)
  *
  * 线程安全设计 / Thread safety design:
- *   - Read():  持有 current_mutex_ 返回 current_ 的 shared_ptr（读者可长时间持有）
- *              Hold current_mutex_ to return shared_ptr of current_; reader can hold it long
+ *   - Read():  原子加载 current_ 的 shared_ptr（读者可长时间持有）
+ *              Atomically load current_; readers may hold the snapshot long-term
  *   - Update(): 先占 write_mutex_ 串行写，拷贝旧快照，执行修改，原子替换 current_
  *               Acquire write_mutex_ for serialization, copy old snapshot, mutate, atomically swap
  */
@@ -80,6 +80,8 @@ public:
      */
     struct Snapshot {
         std::vector<KnownIdentity> identities;  // 全量身份列表 / Full identity list
+        std::vector<float> embeddings;           // 连续的 row-major 特征矩阵 / Contiguous embedding matrix
+        size_t embedding_dim = 0;
         std::string version;                     // 底库版本号 / Database version string
     };
 
@@ -108,6 +110,9 @@ public:
      */
     void Update(std::function<void(Snapshot&)> mutator);
 
+    /** 用已构造完成的快照替换当前底库，避免全量更新时的深拷贝。 */
+    void Replace(Snapshot snapshot);
+
     /**
      * 余弦相似度 Top-K 搜索
      * Cosine similarity Top-K search
@@ -122,8 +127,6 @@ public:
 private:
     /** 当前活跃快照（不可变） / Current active snapshot (immutable) */
     std::shared_ptr<const Snapshot> current_ = std::make_shared<Snapshot>();
-    /** 保护 current_ 读访问的互斥锁 / Mutex protecting read access to current_ */
-    mutable std::mutex current_mutex_;
     /** 串行化写操作的互斥锁 / Mutex serializing write operations */
     std::mutex write_mutex_;
     /** 相似度阈值：低于此值的匹配被过滤 / Similarity threshold */

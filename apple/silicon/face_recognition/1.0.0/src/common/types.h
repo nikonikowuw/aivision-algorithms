@@ -67,7 +67,7 @@ struct Rect {
  * @struct Image
  * @brief 图像数据描述符 (Image descriptor, non-owning view)
  *        不持有数据所有权，仅指向外部图像缓冲区。
- *        适用于从 Metal/ANE 等零拷贝流程传入的图像数据。
+ *        适用于包裹外部 pitch-linear 图像数据而不复制。
  * @note stride 表示一行数据的实际字节跨度（可能大于 width*channels 的对齐值）
  */
 struct Image {

@@ -59,7 +59,6 @@ public:
     const std::vector<std::string>& GetOutputNames() const { return output_names_; }
 
 private:
-    float recognition_threshold_;                     ///< 识别相似度阈值 / recognition similarity threshold
     std::shared_ptr<IInferenceBackend> backend_;      ///< 推理后端 / inference backend
     
     // Pre-allocated buffers for zero-copy inputs

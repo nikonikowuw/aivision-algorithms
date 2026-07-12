@@ -11,9 +11,8 @@ capabilities:
       "align_face",
       "extract_embedding",
       "recognize_face",
-      "zero_copy_input",
     ]
-  data: ["bytetrack", "emit_identity", "emit_track", "coreml", "ane", "metal"]
+  data: ["bytetrack", "emit_identity", "emit_track", "coreml", "ane"]
 description: "人脸识别算法 (M1 Pro)，基于 SCRFD 人体检测、ByteTrack 轨迹关联、InsightFace scrfd_2.5g_bnkps 人脸检测和 AdaFace 人脸特征识别"
 hardware: ["apple_m1_pro"]
 
@@ -46,30 +45,10 @@ ai_params_schema:
       default: 0.45
       minimum: 0.0
       maximum: 1.0
-    thread_pool_size:
-      type: "integer"
-      title: "线程池大小"
-      description: "推理管线中并行处理的线程数量，M1 Pro 建议值为 4"
-      default: 4
-      minimum: 1
-      maximum: 16
-    zero_copy_required:
-      type: "boolean"
-      title: "要求零拷贝输入"
-      description: "开启后利用 Apple Unified Memory 零拷贝共享输入"
-      default: true
-    allow_cpu_fallback:
-      type: "boolean"
-      title: "允许 CPU 兼容回退"
-      description: "仅用于调试。允许将 DMA fd 映射并在 CPU 进行兼容性处理"
-      default: false
   required:
     [
       "enable_tracker",
       "person_conf_thres",
       "face_conf_thres",
       "recognition_threshold",
-      "thread_pool_size",
-      "zero_copy_required",
-      "allow_cpu_fallback",
     ]

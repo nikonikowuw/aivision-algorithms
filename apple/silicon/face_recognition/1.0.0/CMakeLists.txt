@@ -26,3 +26,15 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 # Add subdirectories
 add_subdirectory(src)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(face_recognition_unit_tests tests/test_core.cpp)
+    target_include_directories(face_recognition_unit_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(face_recognition_unit_tests PRIVATE
+        algo_preprocess
+        algo_pipeline
+        algo_common
+    )
+    add_test(NAME face_recognition_unit_tests COMMAND face_recognition_unit_tests)
+endif()

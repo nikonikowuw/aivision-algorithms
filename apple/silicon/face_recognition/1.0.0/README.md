@@ -18,7 +18,8 @@ This is a highly optimized, multi-stage face recognition pipeline package design
   * **Greedy NMS**: Implements standard greedy Non-Maximum Suppression (NMS) matching `cv::dnn::NMSBoxes` behavior.
 * **M1 Pro Hardware Acceleration**:
   * Employs **ONNX Runtime** integrated with **XNNPACK** and native **Apple CoreML** execution backends (`.mlpackage` models).
-  * Implements **Zero-Copy Pitch-Linear Sub-Imaging** to crop Region-of-Interest (ROI) heads, avoiding buffer copying and extra allocations during the multi-model forwarding steps.
+  * Wraps pitch-linear BGR input and head ROIs as non-owning image views. NV12 input uses a stride-aware CPU conversion before inference.
+  * Reuses model input, resize, alignment, and output buffers across frames to avoid steady-state heap churn.
 
 ---
 
@@ -28,7 +29,7 @@ This is a highly optimized, multi-stage face recognition pipeline package design
 Input Video Frame (NV12 / BGR)
        │
        ▼
-   NV12ToBGR (if NV12) ──▶ Wrap in Image (zero-copy)
+   NV12ToBGR (if NV12) ──▶ Wrap BGR Image view
        │
        ▼
  1. Body Detection (SCRFD Person, 640x640)
@@ -96,6 +97,26 @@ The shared library `nikoniko_detector.so` exports standard C-ABI functions to ea
 * `detector_self_test()`: Runs verification pipelines on local sample resources.
 * `detector_version()`: Returns package version metadata (`1.0.0`).
 * `detector_name()`: Returns algorithm namespace (`face_recognition_m1_pro`).
+
+### Future Engine ABI: Apple Native Buffers
+
+The current `hw_buffer_desc_t` contract provides a host `data` pointer and one row stride. It cannot fully describe a retained `CVPixelBuffer`/`IOSurface`, independent NV12 plane strides, native-buffer ownership, or producer/consumer synchronization. Consequently, BGR24 can be wrapped without copying, while NV12 currently requires a stride-aware CPU conversion.
+
+A future Engine ABI revision should use the platform-reserved payload, with explicit version and size fields, to carry a borrowed native handle, buffer kind, FourCC, plane count, per-plane strides/offsets, and synchronization metadata. The intended path is:
+
+```text
+Decoder CVPixelBuffer -> Engine descriptor -> CoreML image input / CVMetalTextureCache
+                      -> fused resize + color conversion + normalization -> inference
+```
+
+Compatibility requirements:
+
+- Keep the existing `detector_infer` signature and packed BGR24 path.
+- Define retain/release ownership for the complete synchronous call.
+- Validate ABI version, payload size, native FourCC, plane count, and strides before use.
+- Do not restore the `zero_copy_input` capability until Instruments confirms that no full-frame CPU copy occurs and the native-buffer integration tests pass.
+
+The executable contract and required test matrix are documented in [Apple Native Buffer ABI](docs/apple-native-buffer-abi.md).
 
 ---
 

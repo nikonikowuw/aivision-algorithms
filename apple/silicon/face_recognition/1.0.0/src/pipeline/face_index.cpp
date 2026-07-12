@@ -23,9 +23,7 @@ void FaceIndex::Initialize(float threshold) {
     std::lock_guard<std::mutex> lock(write_mutex_);
     auto new_snapshot = std::make_shared<Snapshot>();
     new_snapshot->version = "initial";
-    // 原子替换 current_ / Atomically replace current_
-    std::lock_guard<std::mutex> read_lock(current_mutex_);
-    current_ = new_snapshot;
+    std::atomic_store(&current_, std::shared_ptr<const Snapshot>(std::move(new_snapshot)));
 }
 
 /**
@@ -39,8 +37,7 @@ void FaceIndex::Initialize(float threshold) {
  * even if a Writer updates the index later.
  */
 std::shared_ptr<const FaceIndex::Snapshot> FaceIndex::Read() const {
-    std::lock_guard<std::mutex> lock(current_mutex_);
-    return current_;
+    return std::atomic_load(&current_);
 }
 
 /**
@@ -57,20 +54,18 @@ void FaceIndex::Update(std::function<void(Snapshot&)> mutator) {
     std::lock_guard<std::mutex> write_lock(write_mutex_);
 
     // 深拷贝当前快照 / Deep-copy the current snapshot
-    auto new_snapshot = std::make_shared<Snapshot>();
-    {
-        std::lock_guard<std::mutex> read_lock(current_mutex_);
-        *new_snapshot = *current_;  // copy identities vector and version
-    }
+    auto new_snapshot = std::make_shared<Snapshot>(*Read());
 
     // 执行调用者提供的修改逻辑 / Execute the user-provided mutation
     mutator(*new_snapshot);
 
-    // 原子替换：新快照即生效 / Atomic swap: new snapshot goes live
-    {
-        std::lock_guard<std::mutex> read_lock(current_mutex_);
-        current_ = new_snapshot;
-    }
+    std::atomic_store(&current_, std::shared_ptr<const Snapshot>(std::move(new_snapshot)));
+}
+
+void FaceIndex::Replace(Snapshot snapshot) {
+    std::lock_guard<std::mutex> write_lock(write_mutex_);
+    auto new_snapshot = std::make_shared<Snapshot>(std::move(snapshot));
+    std::atomic_store(&current_, std::shared_ptr<const Snapshot>(std::move(new_snapshot)));
 }
 
 /**
@@ -99,16 +94,25 @@ std::vector<SearchResult> FaceIndex::SearchTopK(
     // 用哈希表按 identity_id 去重，只保留每条记录的最高相似度
     // Deduplicate by identity_id: keep the best similarity for each ID
     std::unordered_map<std::string, SearchResult> best_matches;
+    best_matches.reserve(snapshot->identities.size());
+
+    const bool has_contiguous_embeddings =
+        snapshot->embedding_dim == dim &&
+        snapshot->embeddings.size() == snapshot->identities.size() * dim;
 
     for (const auto& identity : snapshot->identities) {
         // 维度不匹配则跳过 / Skip if dimension mismatch
-        if (identity.embedding.size() != dim) continue;
+        if (!has_contiguous_embeddings && identity.embedding.size() != dim) continue;
 
         // 计算 L2 归一化后的点积（预归一化特征，点积 = 余弦相似度）
         // Compute dot product on pre-L2-normalized embeddings (= cosine similarity)
         float similarity = 0.0f;
+        const size_t identity_index = static_cast<size_t>(&identity - snapshot->identities.data());
+        const float* embedding = has_contiguous_embeddings
+            ? snapshot->embeddings.data() + identity_index * dim
+            : identity.embedding.data();
         for (size_t i = 0; i < dim; ++i) {
-            similarity += query[i] * identity.embedding[i];
+            similarity += query[i] * embedding[i];
         }
 
         // 低于阈值的过滤掉 / Filter out low-similarity matches
@@ -126,16 +130,13 @@ std::vector<SearchResult> FaceIndex::SearchTopK(
         results.push_back(pair.second);
     }
 
-    // 按相似度降序排序 / Sort by similarity descending
-    std::sort(results.begin(), results.end(),
-              [](const SearchResult& a, const SearchResult& b) {
-                  return a.similarity > b.similarity;
-              });
-
-    // 截断到 Top-K / Truncate to top-K
-    if (results.size() > static_cast<size_t>(k)) {
-        results.resize(k);
-    }
+    if (k <= 0) return {};
+    const size_t top_count = std::min(results.size(), static_cast<size_t>(k));
+    std::partial_sort(results.begin(), results.begin() + top_count, results.end(),
+                      [](const SearchResult& a, const SearchResult& b) {
+                          return a.similarity > b.similarity;
+                      });
+    results.resize(top_count);
 
     return results;
 }

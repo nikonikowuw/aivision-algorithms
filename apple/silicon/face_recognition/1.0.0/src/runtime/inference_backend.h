@@ -120,8 +120,8 @@ private:
  * @brief Apple CoreML 推理后端（使用 MLModel API）
  *        Apple CoreML inference backend (using MLModel API)
  *
- * 编译 .mlmodelc 并使用 MLMultiArray 零拷贝包装输入数据。
- * Compiles .mlmodelc and wraps input data via MLMultiArray zero-copy.
+ * 直接加载 .mlmodelc；其他 CoreML 模型格式先编译，再使用 MLMultiArray 包装输入数据。
+ * Loads .mlmodelc directly; compiles other CoreML model formats before inference.
  */
 class CoreMLBackend : public IInferenceBackend {
 public:

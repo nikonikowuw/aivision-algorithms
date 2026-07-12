@@ -246,14 +246,11 @@ static void ParseEnvFile(const std::string &path, Config &cfg) {
             else if (key == "person_conf_thres") cfg.person_conf_thres = std::stof(value);
             else if (key == "face_conf_thres") cfg.face_conf_thres = std::stof(value);
             else if (key == "recognition_threshold") cfg.recognition_threshold = std::stof(value);
-            else if (key == "zero_copy_required") cfg.zero_copy_required = (value == "true");
-            else if (key == "allow_cpu_fallback") cfg.allow_cpu_fallback = (value == "true");
             else if (key == "nms_iou_thres") cfg.nms_iou_thres = std::stof(value);
             else if (key == "tracker_iou_thres") cfg.tracker_iou_thres = std::stof(value);
             else if (key == "tracker_max_lost_frames") cfg.tracker_max_lost_frames = std::stoi(value);
             else if (key == "max_persons") cfg.max_persons = std::stoi(value);
             else if (key == "max_faces") cfg.max_faces = std::stoi(value);
-            else if (key == "thread_pool_size") cfg.thread_pool_size = std::stoi(value);
             else if (key == "ort_intra_op_threads") cfg.ort_intra_op_threads = std::stoi(value);
             else if (key == "min_body_height") cfg.head_roi.min_body_height = std::stoi(value);
             else if (key == "full_body_ratio") cfg.head_roi.full_body_ratio = std::stof(value);
@@ -321,8 +318,6 @@ Config Config::LoadConfig(const char *config_json) {
         cfg.max_persons = std::clamp(static_cast<int>(value), 1, 200);
     if (ExtractNumber(json, "max_faces", &value))
         cfg.max_faces = std::clamp(static_cast<int>(value), 1, 200);
-    if (ExtractNumber(json, "thread_pool_size", &value))
-        cfg.thread_pool_size = std::clamp(static_cast<int>(value), 1, 64);
     if (ExtractNumber(json, "ort_intra_op_threads", &value))
         cfg.ort_intra_op_threads = std::clamp(static_cast<int>(value), 1, 64);
     if (ExtractNumber(json, "log_timing_interval", &value))
@@ -340,8 +335,6 @@ Config Config::LoadConfig(const char *config_json) {
 
     // Boolean flags
     ExtractBool(json, "enable_tracker", &cfg.enable_tracker);
-    ExtractBool(json, "zero_copy_required", &cfg.zero_copy_required);
-    ExtractBool(json, "allow_cpu_fallback", &cfg.allow_cpu_fallback);
     ExtractBool(json, "enable_timing_report", &cfg.enable_timing_report);
     ExtractBool(json, "log_model_io", &cfg.log_model_io);
 

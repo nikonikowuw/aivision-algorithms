@@ -34,8 +34,6 @@ struct Config {
     float person_conf_thres = 0.45f;
     float face_conf_thres = 0.55f;
     float recognition_threshold = 0.45f;
-    bool zero_copy_required = true;
-    bool allow_cpu_fallback = false;
 
     /**
      * @struct HeadROIParams
@@ -59,7 +57,6 @@ struct Config {
     int tracker_max_lost_frames = 30;
     int max_persons = 50;
     int max_faces = 50;
-    int thread_pool_size = 4;
     int ort_intra_op_threads = 2;
 
     // Log levels map (Module Name -> Level Name)

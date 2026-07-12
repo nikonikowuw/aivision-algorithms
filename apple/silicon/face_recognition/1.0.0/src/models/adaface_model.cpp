@@ -9,8 +9,8 @@
 
 namespace face_rec {
 
-AdaFaceModel::AdaFaceModel(float recognition_threshold)
-    : recognition_threshold_(recognition_threshold) {
+AdaFaceModel::AdaFaceModel(float recognition_threshold) {
+    (void)recognition_threshold;
     
     // 预分配 112×112×3 float 缓冲区 (NCHW 格式)
     // Pre-allocate 112×112×3 float buffer (NCHW format)
