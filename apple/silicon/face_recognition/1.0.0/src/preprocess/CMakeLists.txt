@@ -4,6 +4,5 @@ add_library(algo_preprocess STATIC
 
 target_include_directories(algo_preprocess PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/../../../../engine/include
+    ${ALGO_COMMON_INCLUDES}
 )

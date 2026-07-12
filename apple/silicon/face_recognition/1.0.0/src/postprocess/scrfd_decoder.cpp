@@ -10,37 +10,11 @@
  * then apply NMS to eliminate redundant detections.
  */
 #include "scrfd_decoder.h"
+#include "common/geometry_utils.h"
 #include <algorithm>
 #include <cmath>
 
 namespace face_rec {
-
-/**
- * @brief 计算两个矩形框的交并比（IoU）
- *        Compute Intersection over Union (IoU) between two rectangles
- * @param box1 矩形框 1 / box 1
- * @param box2 矩形框 2 / box 2
- * @return IoU 值（[0, 1] 范围） / IoU value in [0, 1]
- */
-static float ComputeIoU(const Rect& box1, const Rect& box2) {
-    // 计算交集区域的左上角和右下角坐标
-    // Compute intersection top-left and bottom-right coordinates
-    float x1 = std::max(box1.x, box2.x);
-    float y1 = std::max(box1.y, box2.y);
-    float x2 = std::min(box1.x + box1.width, box2.x + box2.width);
-    float y2 = std::min(box1.y + box1.height, box2.y + box2.height);
-    
-    float intersection_w = std::max(0.0f, x2 - x1);
-    float intersection_h = std::max(0.0f, y2 - y1);
-    float intersection_area = intersection_w * intersection_h;
-    
-    float area1 = box1.width * box1.height;
-    float area2 = box2.width * box2.height;
-    float union_area = area1 + area2 - intersection_area;
-    
-    if (union_area <= 0.0f) return 0.0f;
-    return intersection_area / union_area;
-}
 
 std::vector<DetectedObject> ScrfdDecoder::Decode(
     const std::vector<StrideOutput>& outputs,

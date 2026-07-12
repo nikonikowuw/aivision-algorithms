@@ -1,0 +1,7 @@
+# Algorithm Package — Build Artifacts & Local Config Exclusions
+.env
+*.zip
+build/
+__pycache__/
+*.o
+*.so

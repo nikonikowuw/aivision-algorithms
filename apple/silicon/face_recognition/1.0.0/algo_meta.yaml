@@ -1,4 +1,3 @@
-algorithm_name: "face_recognition"
 algorithm: "face_recognition"
 version: "1.0.0"
 domain: "face"

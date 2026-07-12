@@ -8,6 +8,7 @@
  */
 
 #include "tracker.h"
+#include "common/geometry_utils.h"
 #include <algorithm>
 
 namespace face_rec {
@@ -39,24 +40,7 @@ void ByteTracker::Reset() {
  * 当不相交时返回 0.0f / Returns 0.0f when there is no overlap
  */
 float ByteTracker::ComputeIOU(const Rect& box1, const Rect& box2) {
-    // 计算交集区域的左上角和右下角 / Compute intersection rect
-    float x1 = std::max(box1.x, box2.x);
-    float y1 = std::max(box1.y, box2.y);
-    float x2 = std::min(box1.x + box1.width, box2.x + box2.width);
-    float y2 = std::min(box1.y + box1.height, box2.y + box2.height);
-
-    // 不相交，交集面积为 0 / No overlap
-    if (x1 >= x2 || y1 >= y2) return 0.0f;
-
-    // 交集面积 / Intersection area
-    float intersection = (x2 - x1) * (y2 - y1);
-    // 各自面积 / Individual areas
-    float area1 = box1.width * box1.height;
-    float area2 = box2.width * box2.height;
-    float union_area = area1 + area2 - intersection;
-
-    if (union_area <= 0.0f) return 0.0f;
-    return intersection / union_area;
+    return ComputeIoU(box1, box2);
 }
 
 /**

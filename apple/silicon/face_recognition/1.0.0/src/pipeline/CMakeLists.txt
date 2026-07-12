@@ -8,7 +8,6 @@ add_library(algo_pipeline STATIC
 
 target_include_directories(algo_pipeline PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/../../../../engine/include
+    ${ALGO_COMMON_INCLUDES}
     ${ONNXRUNTIME_INCLUDE_DIR}
 )

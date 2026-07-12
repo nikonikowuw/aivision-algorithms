@@ -13,38 +13,44 @@
 
 namespace face_rec {
 
+/**
+ * @brief 将 Letterbox 坐标系下的 bbox 和关键点反算到本地坐标并钳制
+ *        Inverse letterbox mapping for bbox and landmarks, with clamping
+ */
+static void ApplyLetterboxInverse(Rect& bbox, std::array<Point, 5>& landmarks,
+                                   const image_utils::LetterboxInfo& letterbox,
+                                   int orig_width, int orig_height) {
+    float x1 = (bbox.x - letterbox.pad_x) / letterbox.scale;
+    float y1 = (bbox.y - letterbox.pad_y) / letterbox.scale;
+    float x2 = (bbox.x + bbox.width - letterbox.pad_x) / letterbox.scale;
+    float y2 = (bbox.y + bbox.height - letterbox.pad_y) / letterbox.scale;
+
+    x1 = std::max(0.0f, std::min(x1, static_cast<float>(orig_width)));
+    y1 = std::max(0.0f, std::min(y1, static_cast<float>(orig_height)));
+    x2 = std::max(0.0f, std::min(x2, static_cast<float>(orig_width)));
+    y2 = std::max(0.0f, std::min(y2, static_cast<float>(orig_height)));
+
+    bbox.x = x1;
+    bbox.y = y1;
+    bbox.width = x2 - x1;
+    bbox.height = y2 - y1;
+
+    for (auto& kp : landmarks) {
+        float kx = (kp.x - letterbox.pad_x) / letterbox.scale;
+        float ky = (kp.y - letterbox.pad_y) / letterbox.scale;
+        kp.x = std::max(0.0f, std::min(kx, static_cast<float>(orig_width)));
+        kp.y = std::max(0.0f, std::min(ky, static_cast<float>(orig_height)));
+    }
+}
+
 void CoordinateMapper::RestoreToOriginal(
     const image_utils::LetterboxInfo& letterbox,
     int orig_width, int orig_height,
     std::vector<DetectedObject>* objects) {
     if (!objects) return;
-    
+
     for (auto& obj : *objects) {
-        // 单阶段反算：去除 Letterbox 填充并除以缩放系数
-        // 1-stage inverse: remove letterbox padding and divide by scale factor
-        float x1 = (obj.bbox.x - letterbox.pad_x) / letterbox.scale;
-        float y1 = (obj.bbox.y - letterbox.pad_y) / letterbox.scale;
-        float x2 = (obj.bbox.x + obj.bbox.width - letterbox.pad_x) / letterbox.scale;
-        float y2 = (obj.bbox.y + obj.bbox.height - letterbox.pad_y) / letterbox.scale;
-        
-        // 将坐标钳制到图像有效范围内 / Clamp coordinates to valid image area
-        x1 = std::max(0.0f, std::min(x1, static_cast<float>(orig_width)));
-        y1 = std::max(0.0f, std::min(y1, static_cast<float>(orig_height)));
-        x2 = std::max(0.0f, std::min(x2, static_cast<float>(orig_width)));
-        y2 = std::max(0.0f, std::min(y2, static_cast<float>(orig_height)));
-        
-        obj.bbox.x = x1;
-        obj.bbox.y = y1;
-        obj.bbox.width = x2 - x1;
-        obj.bbox.height = y2 - y1;
-        
-        // 同样处理五个关键点坐标 / Apply same mapping to five landmarks
-        for (auto& kp : obj.landmarks) {
-            float kx = (kp.x - letterbox.pad_x) / letterbox.scale;
-            float ky = (kp.y - letterbox.pad_y) / letterbox.scale;
-            kp.x = std::max(0.0f, std::min(kx, static_cast<float>(orig_width)));
-            kp.y = std::max(0.0f, std::min(ky, static_cast<float>(orig_height)));
-        }
+        ApplyLetterboxInverse(obj.bbox, obj.landmarks, letterbox, orig_width, orig_height);
     }
 }
 
@@ -54,7 +60,7 @@ void CoordinateMapper::MapToOriginalFrame(
     int orig_width, int orig_height,
     std::vector<DetectedObject>* objects) {
     if (!objects) return;
-    
+
     for (auto& obj : *objects) {
         // 第一阶段：将 Letterbox 坐标反算到 ROI 局部坐标系（同单阶段）
         // Stage 1: inverse letterbox to ROI local coordinates (same as 1-stage)
@@ -62,25 +68,25 @@ void CoordinateMapper::MapToOriginalFrame(
         float y1_roi = (obj.bbox.y - letterbox.pad_y) / letterbox.scale;
         float x2_roi = (obj.bbox.x + obj.bbox.width - letterbox.pad_x) / letterbox.scale;
         float y2_roi = (obj.bbox.y + obj.bbox.height - letterbox.pad_y) / letterbox.scale;
-        
+
         // 第二阶段：叠加 ROI 在原图中的偏移量，得到原始全图坐标
         // Stage 2: add ROI offset to obtain coordinates in the original full frame
         float x1 = x1_roi + crop.x;
         float y1 = y1_roi + crop.y;
         float x2 = x2_roi + crop.x;
         float y2 = y2_roi + crop.y;
-        
+
         // 钳制到图像边界 / Clamp to image boundaries
         x1 = std::max(0.0f, std::min(x1, static_cast<float>(orig_width)));
         y1 = std::max(0.0f, std::min(y1, static_cast<float>(orig_height)));
         x2 = std::max(0.0f, std::min(x2, static_cast<float>(orig_width)));
         y2 = std::max(0.0f, std::min(y2, static_cast<float>(orig_height)));
-        
+
         obj.bbox.x = x1;
         obj.bbox.y = y1;
         obj.bbox.width = x2 - x1;
         obj.bbox.height = y2 - y1;
-        
+
         // 同样处理关键点坐标 / Apply two-stage mapping to landmarks
         for (auto& kp : obj.landmarks) {
             float kx_roi = (kp.x - letterbox.pad_x) / letterbox.scale;

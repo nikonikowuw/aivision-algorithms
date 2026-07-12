@@ -19,8 +19,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <cstdio>
-#include <iostream>
 
 namespace face_rec {
 
@@ -367,7 +365,7 @@ int AlgorithmContext::Infer(const hw_buffer_desc_t* input, const char* context_j
     // 使用 types.h 中定义的 pixel_format::BGR24 / pixel_format::NV12
 
     Image frame_img;
-    if (input->pixel_format == PIX_FMT_BGR24) {
+    if (input->pixel_format == pixel_format::BGR24) {
         // BGR24 直接封装 / Directly wrap BGR24 memory
         frame_img = Image{reinterpret_cast<const uint8_t*>(input->data), frame_w, frame_h, 3, static_cast<int>(input->stride)};
     } else if (input->pixel_format == pixel_format::NV12) {

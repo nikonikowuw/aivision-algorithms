@@ -5,7 +5,6 @@ add_library(algo_models STATIC
 
 target_include_directories(algo_models PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/../../../../engine/include
+    ${ALGO_COMMON_INCLUDES}
     ${ONNXRUNTIME_INCLUDE_DIR}
 )

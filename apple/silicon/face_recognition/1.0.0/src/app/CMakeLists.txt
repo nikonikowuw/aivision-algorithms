@@ -13,8 +13,7 @@ target_link_libraries(nikoniko_detector PRIVATE
 )
 
 target_include_directories(nikoniko_detector PRIVATE
-    ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/../../../../engine/include
+    ${ALGO_COMMON_INCLUDES}
     ${ONNXRUNTIME_INCLUDE_DIR}
 )
 

@@ -1,4 +1,10 @@
 # src/CMakeLists.txt
+# 统一公共 include 路径变量，避免在子目录中重复定义
+set(ALGO_COMMON_INCLUDES
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/../../../../engine/include
+)
+
 add_subdirectory(common)
 add_subdirectory(preprocess)
 add_subdirectory(postprocess)
