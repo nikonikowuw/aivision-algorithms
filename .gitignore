@@ -8,3 +8,4 @@
 *.rknn
 *.om
 .venv/
+**/*.mlpackage/*
