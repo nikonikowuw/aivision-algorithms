@@ -103,6 +103,23 @@ def main():
                 dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
                 opset_version=args.opset
             )
+            
+            # Post-process to consolidate external data weights into a single ONNX file
+            print("-> Consolidating external data weights back into the ONNX file...")
+            import onnx
+            import os
+            from onnx.external_data_helper import convert_model_from_external_data
+            
+            model = onnx.load(str(output_path))
+            convert_model_from_external_data(model)
+            onnx.save(model, str(output_path))
+            
+            # Clean up external data file if created
+            data_file = output_path.with_suffix(output_path.suffix + ".data")
+            if data_file.exists():
+                os.remove(data_file)
+                print(f"🧹 Cleaned up temporary external data file: {data_file}")
+                
             print(f"✅ ONNX export successful! Output path: {output_path}")
         except Exception as e:
             print(f"❌ ONNX export failed: {e}", file=sys.stderr)

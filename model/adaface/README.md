@@ -4,7 +4,19 @@
 
 ---
 
-## 1. 目录结构
+## 1. 输入与输出规格
+
+| 规格类型 | 配置详情 | 说明 |
+| :--- | :--- | :--- |
+| **输入形状** | `(1, 3, 112, 112)` | **固定分辨率**。输入源必须是经过 5 点关键点对齐裁剪后的人脸正视图像。 |
+| **通道顺序** | **BGR** | 直接读取 OpenCV 默认的 BGR 内存排布，**无需交换 RB 通道**。 |
+| **归一化方式** | `(x - 127.5) / 127.5` | 均值 127.5，标准差 127.5。对齐人脸输入归一化。 |
+| **输出张量** | 1 个输出，通常命名为 `output` | 格式为 `(1, 512)`。 |
+| **输出物理含义** | 512维人脸特征向量 (Embedding) | 该向量在模型输出前**已执行 L2 归一化**（模长为 1.0）。可直接通过点积（Dot Product）计算人脸特征相似度得分。 |
+
+---
+
+## 2. 目录结构
 
 ```text
 adaface/
@@ -20,7 +32,7 @@ adaface/
 
 ---
 
-## 2. 环境准备
+## 3. 环境准备
 
 在执行导出和转换脚本之前，请确保已安装必要的 Python 依赖包。
 建议使用 Python 虚拟环境，并安装以下包：
@@ -33,11 +45,11 @@ pip install torch torchvision coremltools transformers huggingface_hub
 
 ---
 
-## 3. 权重下载
+## 4. 权重下载
 
 使用 `weights/download.sh` 脚本可一键从 Hugging Face 下载 AdaFace IR-101 (WebFace4M) 的官方预训练模型权重。
 
-### 3.1 用法
+### 4.1 用法
 
 ```bash
 ./weights/download.sh
@@ -45,11 +57,11 @@ pip install torch torchvision coremltools transformers huggingface_hub
 
 ---
 
-## 4. 模型导出与多平台转换
+## 5. 模型导出与多平台转换
 
 通过 `python/export.py` 与 `python/conver.py` 可以方便地处理权重导出并编译为特定的运行环境。
 
-### 4.1 导出为通用 ONNX / Mac Apple Silicon CoreML
+### 5.1 导出为通用 ONNX / Mac Apple Silicon CoreML
 
 1. **导出为通用 ONNX 格式 (`.onnx`)**：
 
@@ -63,7 +75,7 @@ pip install torch torchvision coremltools transformers huggingface_hub
     python python/export.py -w weights/adaface_ir101_webface4m.ckpt -f coreml --imgsz 112
     ```
 
-### 4.2 平台专用编译 (conver.py)
+### 5.2 平台专用编译 (conver.py)
 
 1. **编译为 Apple Silicon M 系列芯片专用的 CoreML 格式**：
 
