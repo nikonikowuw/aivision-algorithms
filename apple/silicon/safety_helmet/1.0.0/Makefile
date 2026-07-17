@@ -105,7 +105,7 @@ package: build validate
 	@cp algo_meta.yaml label_map.json testimage.jpg tentcoo_detection.so README.md /tmp/safety_helmet_1.0.0/
 	@if [ -d "weights" ]; then cp -r weights/* /tmp/safety_helmet_1.0.0/weights/ 2>/dev/null || true; fi
 	@rm -f safety_helmet_1.0.0.zip
-	@(cd /tmp && zip -r safety_helmet_1.0.0.zip safety_helmet_1.0.0)
+	@python3 -c "import shutil; shutil.make_archive('/tmp/safety_helmet_1.0.0', 'zip', '/tmp', 'safety_helmet_1.0.0')"
 	@mv /tmp/safety_helmet_1.0.0.zip ./
 	@rm -rf /tmp/safety_helmet_1.0.0
 	@echo "✓ Output file: safety_helmet_1.0.0.zip"
