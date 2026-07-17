@@ -1,0 +1,28 @@
+algorithm: "safety_helmet"
+version: "1.0.0"
+domain: "security"
+result_schema: "object_detection"
+capabilities:
+  image: ["detect_safety_helmet"]
+  data: ["coreml", "ane", "onnxruntime"]
+description: "安全帽检测算法 (Apple Silicon)，基于 DAMO-YOLO-S 检测框架，支持检测人员是否佩戴安全帽"
+hardware: ["apple_silicon"]
+
+ai_params_schema:
+  type: "object"
+  properties:
+    conf_threshold:
+      type: "number"
+      title: "检测置信度阈值"
+      description: "低于此置信度的检测框将被忽略"
+      default: 0.5
+      minimum: 0.1
+      maximum: 0.95
+    iou_threshold:
+      type: "number"
+      title: "NMS IOU 阈值"
+      description: "非极大值抑制的 IOU 阈值"
+      default: 0.45
+      minimum: 0.1
+      maximum: 0.9
+  required: ["conf_threshold", "iou_threshold"]

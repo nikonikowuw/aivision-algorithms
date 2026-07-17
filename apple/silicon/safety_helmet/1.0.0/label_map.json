@@ -1,0 +1,10 @@
+{
+  "10001": {
+    "name": "safety_hat",
+    "name_zh": "安全帽"
+  },
+  "10002": {
+    "name": "no_safety_hat",
+    "name_zh": "未戴安全帽"
+  }
+}
