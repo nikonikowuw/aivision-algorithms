@@ -11,5 +11,5 @@ target_include_directories(algo_postprocess PUBLIC
 )
 
 target_link_libraries(algo_postprocess PUBLIC
-    opencv_core opencv_imgproc
+    opencv_core
 )

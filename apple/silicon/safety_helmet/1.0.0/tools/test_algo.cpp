@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <vector>
 #include <opencv2/opencv.hpp>
-#include "engine/include/algo/abi_contract.h"
+#include "algo/abi_contract.h"
 
 // Define function pointer types matching the contract
 typedef algo_handle_t (*detector_init_fn)(const char *config_json);

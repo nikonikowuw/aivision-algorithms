@@ -1,3 +1,8 @@
+/**
+ * @file damoyolo_model.cpp
+ * @brief DAMO-YOLO-S model — thin delegation to OrtSessionManager.
+ */
+
 #include "damoyolo_model.h"
 
 namespace safety_helmet {

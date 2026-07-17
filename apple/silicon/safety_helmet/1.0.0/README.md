@@ -4,9 +4,11 @@ This is a highly optimized safety helmet (helmet) detection algorithm package de
 
 ## 🚀 Key Features & Optimizations
 - **DAMO-YOLO-S + CoreML EP**: Uses Apple Silicon Neural Engine (ANE) via ONNXRuntime's CoreML Execution Provider for hardware-accelerated object detection.
-- **Zero-Copy on UMA**: Leverages Unified Memory Architecture (UMA) to eliminate redundant frame copies during buffer conversion.
+- **Metal GPU Preprocessing**: Letterbox resize, BGR→RGB swap, and float normalization are offloaded to a custom Metal compute shader, running on the GPU with hardware-accelerated bilinear sampling. Eliminates CPU-side `cv::resize`/`cv::cvtColor` bottlenecks.
+- **Zero-Copy CVPixelBuffer Path**: When the engine provides `HW_BUFFER_TYPE_METAL` with a retained `CVPixelBufferRef`, preprocessing reads directly from the pixel buffer's GPU backing via `CVMetalTextureCache` — no intermediate copies.
+- **Graceful Fallback**: On non-Apple platforms or if Metal is unavailable, the pipeline transparently falls back to the CPU `LetterBoxPreprocess` path.
 - **Pure C++ / ObjC++**: Self-contained C ABI wrapper mapping to `tentcoo_detection.so` per the Engine loading contract.
-- **Robust Exception Handling**: Protects the Gin/Go host process from C++ exceptions or Apple framework NSExceptions.
+- **Robust Exception Handling**: C-ABI entry points catch `std::exception`, unknown C++ exceptions, and Apple framework `NSException` — preventing any exception from crossing into the Go host.
 
 ## 💼 C ABI Interface Contract
 - `detector_init(const char* config_json)`

@@ -1,5 +1,6 @@
 add_library(algo_common STATIC
     config_parser.cpp
+    input_buffer_validator.cpp
 )
 
 target_include_directories(algo_common PUBLIC

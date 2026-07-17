@@ -1,7 +1,6 @@
 # src/CMakeLists.txt
 set(ALGO_COMMON_INCLUDES
     ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/../../../../
 )
 
 add_subdirectory(common)

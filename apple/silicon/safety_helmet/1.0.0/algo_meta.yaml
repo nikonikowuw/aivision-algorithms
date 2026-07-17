@@ -1,10 +1,11 @@
 algorithm: "safety_helmet"
+name: "安全帽检测"
 version: "1.0.0"
 domain: "security"
 result_schema: "object_detection"
 capabilities:
   image: ["detect_safety_helmet"]
-  data: ["coreml", "ane", "onnxruntime"]
+  data: ["coreml", "ane", "metal", "onnxruntime"]
 description: "安全帽检测算法 (Apple Silicon)，基于 DAMO-YOLO-S 检测框架，支持检测人员是否佩戴安全帽"
 hardware: ["apple_silicon"]
 

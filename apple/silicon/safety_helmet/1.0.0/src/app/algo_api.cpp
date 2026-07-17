@@ -1,32 +1,66 @@
+/**
+ * @file algo_api.cpp
+ * @brief Non-Apple C-ABI entry point — plain C++ variant (no ObjC).
+ *
+ * This is the CPU-only variant of the ABI entry point, used on Linux/Windows
+ * builds where Metal and NSException are unavailable. The Apple Silicon
+ * variant (algo_api.mm) provides the same interface plus NSException interop
+ * and HW_BUFFER_TYPE_METAL support.
+ *
+ * ## Exported ABI symbols
+ *
+ *   detector_init      — Parse config, load model, return opaque handle.
+ *   detector_infer     — Single-frame synchronous inference (BGR24/NV12 CPU paths).
+ *   detector_destroy   — Destroy handle, release resources.
+ *   detector_version   — Return "1.0.0".
+ *   detector_name      — Return "safety_helmet".
+ *   detector_self_test — Self-check with testimage.jpg.
+ *   algo_free_result   — Free result_json.
+ *   detector_free_result — Alias for algo_free_result.
+ *
+ * ## Exception safety
+ *
+ * All C-ABI functions are wrapped in C++ try/catch. On non-Apple platforms
+ * CoreML is not loaded, so NSException is not a concern.
+ */
+
 #include "pipeline/safety_helmet_pipeline.h"
+#include "common/input_buffer_validator.h"
 #include "common/logger.h"
 #include "common/timer.h"
-#include "engine/include/algo/abi_contract.h"
+#include "algo/abi_contract.h"
 #include <exception>
 #include <cstring>
 #include <cstdlib>
+#include <memory>
 #include <sstream>
 #include <iomanip>
 #include <dlfcn.h>
 
-namespace safety_helmet {
-namespace pixel_format {
-    constexpr uint32_t BGR24 = ('B') | ('G' << 8) | ('R' << 16) | ('3' << 24);
-    constexpr uint32_t NV12  = ('N') | ('V' << 8) | ('1' << 16) | ('2' << 24);
-}
-}
-
+// ---------------------------------------------------------------------------
+// SerializeDetections — converts Detection vector to Engine-compliant JSON.
+//
+// Output schema (array of objects):
+//   [
+//     {
+//       "category_code": 10001,
+//       "category_name": "safety_hat",
+//       "detect_confidence": 0.8765,
+//       "bbox": [x, y, w, h]     // all in [0.0, 1.0], relative to original frame
+//     },
+//     ...
+//   ]
+// ---------------------------------------------------------------------------
 static std::string SerializeDetections(const std::vector<safety_helmet::Detection>& detections) {
     std::stringstream ss;
-    ss << "[\n";
+    ss << std::fixed << std::setprecision(6) << "[\n";
     for (size_t i = 0; i < detections.size(); ++i) {
         const auto& det = detections[i];
         ss << "  {\n";
         ss << "    \"category_code\": " << det.category_code << ",\n";
         ss << "    \"category_name\": \"" << det.category_name << "\",\n";
-        ss << "    \"detect_confidence\": " << std::fixed << std::setprecision(4) << det.confidence << ",\n";
+        ss << "    \"detect_confidence\": " << std::setprecision(4) << det.confidence << ",\n";
         ss << "    \"bbox\": [" 
-           << std::fixed << std::setprecision(6) 
            << det.x << ", " 
            << det.y << ", " 
            << det.w << ", " 
@@ -37,6 +71,9 @@ static std::string SerializeDetections(const std::vector<safety_helmet::Detectio
     return ss.str();
 }
 
+// ---------------------------------------------------------------------------
+// GetLibraryDir — self-discover the directory containing this .so via dladdr.
+// ---------------------------------------------------------------------------
 static std::string GetLibraryDir() {
     Dl_info info{};
     if (dladdr(reinterpret_cast<void *>(&GetLibraryDir), &info) != 0 && info.dli_fname) {
@@ -50,15 +87,21 @@ static std::string GetLibraryDir() {
 
 extern "C" {
 
+/**
+ * @brief Initialise the safety helmet detection algorithm.
+ *
+ * @param config_json  JSON string with keys: package_dir, model_path,
+ *                     conf_threshold, iou_threshold.
+ * @return Non-null opaque handle on success, nullptr on failure.
+ */
 algo_handle_t detector_init(const char *config_json) {
     try {
         if (!config_json) return nullptr;
-        auto *pipeline = new safety_helmet::SafetyHelmetPipeline();
+        auto pipeline = std::make_unique<safety_helmet::SafetyHelmetPipeline>();
         if (!pipeline->Initialize(config_json)) {
-            delete pipeline;
             return nullptr;
         }
-        return reinterpret_cast<algo_handle_t>(pipeline);
+        return reinterpret_cast<algo_handle_t>(pipeline.release());
     } catch (const std::exception &e) {
         ALGO_LOG_ERROR("detector_init C++ exception: %s", e.what());
         return nullptr;
@@ -68,16 +111,32 @@ algo_handle_t detector_init(const char *config_json) {
     }
 }
 
+/**
+ * @brief Run single-frame safety helmet detection (CPU path only).
+ *
+ * Supports BGR24 (direct wrap) and NV12 (YUV→BGR via cv::cvtColor).
+ *
+ * @param handle        Opaque handle from detector_init().
+ * @param input         hw_buffer_desc_t with frame data (data, width, height,
+ *                      stride, pixel_format).
+ * @param context_json  Reserved for multi-algorithm chaining (unused).
+ * @param result        [out] result_json (malloc'd), result_json_len, infer_time_us.
+ * @return 0 on success, negative error code on failure.
+ */
 int detector_infer(algo_handle_t handle, const hw_buffer_desc_t *input,
                    const char *context_json, infer_result_t *result) {
     try {
+        (void)context_json;  // Reserved for multi-algorithm chaining.
         if (!handle || !input || !result) return -1;
         result->result_json = nullptr;
         result->result_json_len = 0;
         result->infer_time_us = 0;
 
-        if (!input->data || input->width <= 0 || input->height <= 0) {
-            ALGO_LOG_ERROR("detector_infer: Invalid input parameters");
+        safety_helmet::CpuBufferLayout layout;
+        std::string validation_error;
+        if (!safety_helmet::ValidateCpuBufferDescriptor(
+                *input, layout, validation_error)) {
+            ALGO_LOG_ERROR("detector_infer: %s", validation_error.c_str());
             return -2;
         }
 
@@ -91,11 +150,16 @@ int detector_infer(algo_handle_t handle, const hw_buffer_desc_t *input,
         int frame_h = static_cast<int>(input->height);
 
         if (input->pixel_format == safety_helmet::pixel_format::BGR24) {
+            // Direct wrap — cv::Mat aliases input->data, no copy.
             frame = cv::Mat(frame_h, frame_w, CV_8UC3, const_cast<void*>(input->data), input->stride);
         } else if (input->pixel_format == safety_helmet::pixel_format::NV12) {
-            cv::Mat nv12_mat(frame_h * 3 / 2, input->stride, CV_8UC1, const_cast<void*>(input->data));
+            // NV12 semiplanar: Y plane (W×H) + interleaved UV (½W×½H).
+            // Total rows = H * 3/2, stride = input->stride.
+            cv::Mat nv12_mat(frame_h * 3 / 2, frame_w, CV_8UC1,
+                             const_cast<void*>(input->data), input->stride);
             cv::Mat bgr_mat;
             cv::cvtColor(nv12_mat, bgr_mat, cv::COLOR_YUV2BGR_NV12);
+            // Crop to actual dimensions — cvtColor may produce padded output.
             frame = bgr_mat(cv::Rect(0, 0, frame_w, frame_h));
         } else {
             ALGO_LOG_ERROR("detector_infer: Unsupported pixel format: 0x%08x", input->pixel_format);
@@ -108,11 +172,17 @@ int detector_infer(algo_handle_t handle, const hw_buffer_desc_t *input,
             return -3;
         }
 
+        // Serialize to JSON and allocate result buffer.
         std::string json_str = SerializeDetections(detections);
+        char *result_json = static_cast<char *>(std::malloc(json_str.size() + 1u));
+        if (!result_json) {
+            ALGO_LOG_ERROR("detector_infer: Result allocation failed");
+            return -4;
+        }
+        std::memcpy(result_json, json_str.data(), json_str.size());
+        result_json[json_str.size()] = '\0';
+        result->result_json = result_json;
         result->result_json_len = json_str.size();
-        result->result_json = static_cast<char *>(std::malloc(result->result_json_len + 1));
-        std::memcpy(result->result_json, json_str.c_str(), result->result_json_len + 1);
-
         result->infer_time_us = timer.elapsed_us();
         return 0;
     } catch (const std::exception &e) {
@@ -124,6 +194,13 @@ int detector_infer(algo_handle_t handle, const hw_buffer_desc_t *input,
     }
 }
 
+/**
+ * @brief Destroy algorithm handle and release all resources.
+ *
+ * Idempotent: nullptr is safe.
+ *
+ * @param handle  Opaque handle from detector_init(), or nullptr.
+ */
 void detector_destroy(algo_handle_t handle) {
     try {
         if (handle) {
@@ -138,16 +215,34 @@ void detector_destroy(algo_handle_t handle) {
     }
 }
 
+/** @return Static version string "1.0.0". */
 const char *detector_version(void) {
     return "1.0.0";
 }
 
+/** @return Static algorithm name "safety_helmet". */
 const char *detector_name(void) {
     return "safety_helmet";
 }
 
+/**
+ * @brief Self-test: load testimage.jpg, run detect-infer-destroy, report result.
+ *
+ * Verifies ABI struct sizes, loads the test image from the package directory,
+ * and runs a full inference cycle. Called by the platform's Asynq background
+ * task after package upload.
+ *
+ * @return 0 on success, negative error code on failure.
+ * @retval -1/-2 ABI struct size mismatch.
+ * @retval -3 testimage.jpg not found.
+ * @retval -4 detector_init failed.
+ * @retval -5 cv::imread failed.
+ * @retval -6 detector_infer failed.
+ * @retval -8 Exception caught.
+ */
 int detector_self_test(void) {
     try {
+        // ABI struct size guards — must match the Engine's definitions.
         if (sizeof(hw_buffer_desc_t) != 144) {
             ALGO_LOG_ERROR("self_test failed: hw_buffer_desc_t size %zu != 144", sizeof(hw_buffer_desc_t));
             return -1;
@@ -166,7 +261,7 @@ int detector_self_test(void) {
             return -3;
         }
 
-        // Create temporary config JSON
+        // Build minimal config JSON.
         std::stringstream ss;
         ss << "{\n"
            << "  \"package_dir\": \"" << lib_dir << "\",\n"
@@ -221,6 +316,13 @@ int detector_self_test(void) {
     }
 }
 
+/**
+ * @brief Free memory allocated by detector_infer for result_json.
+ *
+ * Safe to call with nullptr or result->result_json == nullptr.
+ *
+ * @param result  Pointer to the result struct.
+ */
 void algo_free_result(infer_result_t *result) {
     if (result && result->result_json) {
         std::free(result->result_json);
@@ -229,6 +331,7 @@ void algo_free_result(infer_result_t *result) {
     }
 }
 
+/** @brief Convenience alias for algo_free_result(). */
 void detector_free_result(infer_result_t *result) {
     algo_free_result(result);
 }
