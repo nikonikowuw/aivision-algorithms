@@ -1,0 +1,54 @@
+algorithm: "people_counting"
+version: "1.0.0"
+domain: "security"
+result_schema: "people_counting"
+capabilities:
+  image: ["detect_person", "track_person"]
+  data: ["bytetrack", "emit_track", "coreml", "ane", "line_crossing"]
+description: "人流量统计算法 (Apple Silicon)，基于 YOLOv8n 人体检测、ByteTrack 轨迹关联和越线统计逻辑"
+hardware: ["apple_silicon"]
+
+ai_params_schema:
+  type: "object"
+  properties:
+    enable_tracker:
+      type: "boolean"
+      title: "启用人员追踪"
+      description: "开启后使用 ByteTrack 为人体关联稳定 track_id"
+      default: true
+    conf_threshold:
+      type: "number"
+      title: "检测置信度阈值"
+      description: "低于此置信度的检测框将被忽略"
+      default: 0.5
+      minimum: 0.1
+      maximum: 0.95
+    iou_threshold:
+      type: "number"
+      title: "NMS IOU 阈值"
+      description: "非极大值抑制的 IOU 阈值"
+      default: 0.45
+      minimum: 0.1
+      maximum: 0.9
+    track_buffer:
+      type: "integer"
+      title: "跟踪缓冲帧数"
+      description: "目标消失后保留的帧数"
+      default: 30
+      minimum: 10
+      maximum: 120
+    match_threshold:
+      type: "number"
+      title: "跟踪匹配阈值"
+      description: "ByteTrack 匹配的 IOU 阈值"
+      default: 0.2
+      minimum: 0.05
+      maximum: 0.95
+  required:
+    [
+      "enable_tracker",
+      "conf_threshold",
+      "iou_threshold",
+      "track_buffer",
+      "match_threshold",
+    ]
