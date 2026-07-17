@@ -1,0 +1,62 @@
+algorithm: "face_recognition"
+version: "1.0.0"
+domain: "face"
+result_schema: "face_identity_track"
+capabilities:
+  image:
+    [
+      "detect_person",
+      "track_person",
+      "detect_face",
+      "align_face",
+      "extract_embedding",
+      "recognize_face",
+    ]
+  data: ["bytetrack", "emit_identity", "emit_track", "tensorrt_fp16", "cuda", "faiss"]
+description: "人脸识别算法 (NVIDIA GPU RTX 3060)，基于 YOLO11n 人体检测、ByteTrack 轨迹关联、RetinaFace 人脸检测和 AdaFace (IR-50) 人脸特征识别，TensorRT FP16 推理"
+hardware: ["nvidia_gpu"]
+
+ai_params_schema:
+  type: "object"
+  properties:
+    enable_tracker:
+      type: "boolean"
+      title: "启用人员追踪"
+      description: "开启后使用 ByteTrack 为人体和人脸结果关联稳定 track_id"
+      default: true
+    person_conf_thres:
+      type: "number"
+      title: "人体置信度阈值"
+      description: "数值越高，人体检测越严格，误检更少但可能漏检"
+      default: 0.45
+      minimum: 0.0
+      maximum: 1.0
+    face_conf_thres:
+      type: "number"
+      title: "人脸置信度阈值"
+      description: "数值越高，人脸检测越严格，误检更少但可能漏检"
+      default: 0.55
+      minimum: 0.0
+      maximum: 1.0
+    recognition_threshold:
+      type: "number"
+      title: "人脸识别相似度阈值"
+      description: "数值越高，身份识别越严格，误认更少但可能输出未知人员"
+      default: 0.45
+      minimum: 0.0
+      maximum: 1.0
+    max_batch_size:
+      type: "integer"
+      title: "最大批处理大小"
+      description: "TensorRT 动态批处理的最大 batch size，对应优化配置的 max=16"
+      default: 16
+      minimum: 1
+      maximum: 16
+  required:
+    [
+      "enable_tracker",
+      "person_conf_thres",
+      "face_conf_thres",
+      "recognition_threshold",
+      "max_batch_size",
+    ]
