@@ -1,0 +1,29 @@
+# Build artifacts
+build/
+*.so
+*.dylib
+*.o
+*.a
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Model weights (not for source control)
+weights/*.onnx
+weights/*.pt
+weights/*.mlpackage
+artifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temp
+*.tmp
+*.log

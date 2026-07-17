@@ -1,0 +1,12 @@
+add_subdirectory(common)
+add_subdirectory(postprocess)
+add_subdirectory(tracking)
+add_subdirectory(event)
+add_subdirectory(models)
+
+if(APPLE)
+    add_subdirectory(runtime)
+    add_subdirectory(preprocess)
+    add_subdirectory(pipeline)
+    add_subdirectory(app)
+endif()

@@ -1,0 +1,171 @@
+algorithm: smoking_detection
+version: "1.0.0"
+domain: security
+category_code: 14001
+result_schema: smoking_detection
+
+description: |
+  基于 DAMO-YOLO 人体与香烟模型的 Apple Silicon 吸烟检测算法。
+  在单路 4K 广角监控视频中检测人体，使用人物上部 ROI 检测香烟，
+  通过人物轨迹进行时序确认，并在每次事件开始时输出一次结果。
+
+capabilities:
+  image:
+    - smoking_detection
+    - person_tracking
+    - temporal_confirmation
+  data:
+    - coreml_native
+    - metal_preprocess
+    - apple_native_buffer
+    - ane
+
+hardware:
+  - apple_silicon
+
+ai_params_schema:
+  type: object
+  properties:
+    backend:
+      type: string
+      enum: ["coreml_native"]
+      default: "coreml_native"
+      description: "推理后端选择"
+    analysis_fps:
+      type: number
+      minimum: 1
+      maximum: 30
+      default: 4
+      description: "每秒分析帧数"
+    max_persons:
+      type: integer
+      minimum: 1
+      maximum: 50
+      default: 10
+      description: "最大有效人物数"
+    person_conf_threshold:
+      type: number
+      minimum: 0
+      maximum: 1
+      default: 0.50
+      description: "人体置信度阈值"
+    person_nms_threshold:
+      type: number
+      minimum: 0
+      maximum: 1
+      default: 0.70
+      description: "人体 NMS 阈值"
+    cigarette_conf_threshold:
+      type: number
+      minimum: 0
+      maximum: 1
+      default: 0.60
+      description: "香烟置信度阈值"
+    cigarette_nms_threshold:
+      type: number
+      minimum: 0
+      maximum: 1
+      default: 0.70
+      description: "香烟 NMS 阈值"
+    tile_enabled:
+      type: boolean
+      default: true
+      description: "分块检测开关"
+    tile_grid_rows:
+      type: integer
+      minimum: 1
+      default: 2
+      description: "分块行数"
+    tile_grid_cols:
+      type: integer
+      minimum: 1
+      default: 2
+      description: "分块列数"
+    tile_overlap:
+      type: number
+      minimum: 0
+      maximum: 0.5
+      default: 0.15
+      description: "分块重叠率"
+    tile_budget_per_tick:
+      type: integer
+      minimum: 1
+      default: 2
+      description: "每周期分块预算"
+    upper_body_ratio:
+      type: number
+      minimum: 0.1
+      maximum: 1
+      default: 0.60
+      description: "人物上部 ROI 比例"
+    roi_expand_x:
+      type: number
+      minimum: 0
+      maximum: 0.5
+      default: 0.15
+      description: "ROI 水平扩展比例"
+    roi_expand_top:
+      type: number
+      minimum: 0
+      maximum: 0.3
+      default: 0.05
+      description: "ROI 顶部扩展比例"
+    temporal_window:
+      type: integer
+      minimum: 3
+      maximum: 20
+      default: 5
+      description: "时序窗口大小"
+    confirm_hits:
+      type: integer
+      minimum: 1
+      default: 3
+      description: "确认所需最少 hit 次数"
+    rearm_ms:
+      type: integer
+      minimum: 500
+      maximum: 10000
+      default: 2000
+      description: "重新布防时间（ms）"
+    tracker_iou_threshold:
+      type: number
+      minimum: 0
+      maximum: 1
+      default: 0.20
+      description: "跟踪器 IoU 阈值"
+    tracker_max_lost_ms:
+      type: integer
+      minimum: 500
+      maximum: 5000
+      default: 2000
+      description: "跟踪器最大丢失时间（ms）"
+    detection_regions:
+      type: array
+      default: []
+      description: "归一化多边形检测区域列表"
+      items:
+        type: array
+        minItems: 3
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: number
+            minimum: 0
+            maximum: 1
+    model_dir:
+      type: string
+      minLength: 1
+      default: "weights"
+      description: "相对动态库目录的 CoreML 模型目录"
+    log_level:
+      type: integer
+      minimum: 0
+      maximum: 2
+      default: 0
+      description: "日志级别 (0=warn, 1=info, 2=debug)"
+  required:
+    - backend
+    - analysis_fps
+    - max_persons
